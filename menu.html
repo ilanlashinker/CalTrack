@@ -1,0 +1,1788 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>תפריט תזונה שבועי אילן</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+ 
+<div class="container">
+ 
+  <header class="header">
+    <h1 id="main-title">🥗 תפריט שבועי — ירידה במשקל של אילן</h1>
+    <div class="reset-info" id="reset-info"></div>
+  </header>
+
+  <div class="main-nav">
+    <button class="main-nav-btn active" onclick="switchView('menu')">🗓️ תפריט שבועי</button>
+    <button class="main-nav-btn" onclick="switchView('weight')">⚖️ מעקב משקל</button>
+    <button class="main-nav-btn" onclick="switchView('activity')">🏃 פעילות</button>
+    <button class="main-nav-btn" onclick="switchView('deficit')">📉 גרעון</button>
+    <button class="main-nav-btn" onclick="switchView('balance')">🔥 מאזן</button>
+    <button class="main-nav-btn" onclick="switchView('settings')">⚙️ הגדרות</button>
+    <button class="export-btn" onclick="exportToExcel()">📊 ייצוא Excel</button>
+    <button class="backup-btn" onclick="exportBackup()">💾 גיבוי JSON</button>
+    <button class="backup-btn" onclick="importBackup()">📂 שחזור</button>
+    <input type="file" id="restore-input" accept=".json" style="display:none" onchange="handleRestoreFile(this)">
+  </div>
+
+  <div id="menu-view">
+    <div class="menu-layout">
+
+      <aside class="calendar-sidebar">
+        <div class="calendar-card" id="calendar-card"></div>
+        <div class="cal-legend">
+          <div class="cal-legend-item"><span class="cal-legend-dot" style="background:#1d9e75"></span><span id="legend-green">מתחת ל-1,800</span></div>
+          <div class="cal-legend-item"><span class="cal-legend-dot" style="background:#EF9F27"></span><span id="legend-amber">1,800–1,950</span></div>
+          <div class="cal-legend-item"><span class="cal-legend-dot" style="background:#e05757"></span><span id="legend-red">מעל 1,950</span></div>
+        </div>
+        <div id="weekly-summary"></div>
+        <div id="monthly-summary"></div>
+      </aside>
+
+      <div class="menu-main">
+        <div class="day-tabs" role="tablist">
+          <button class="tab-btn active" onclick="show(0)">ראשון</button>
+          <button class="tab-btn" onclick="show(1)">שני</button>
+          <button class="tab-btn" onclick="show(2)">שלישי</button>
+          <button class="tab-btn" onclick="show(3)">רביעי</button>
+          <button class="tab-btn" onclick="show(4)">חמישי</button>
+          <button class="tab-btn" onclick="show(5)">שישי</button>
+          <button class="tab-btn" onclick="show(6)">שבת</button>
+        </div>
+        <div id="days"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="deficit-view" style="display:none">
+
+    <div id="deficit-tdee-bar" class="deficit-tdee-bar"></div>
+    <div class="balance-disclaimer">
+      ⚠️ TDEE מחושב לפי נוסחת Mifflin-St Jeor עם המשקל האחרון שנמדד — הערכה בדיוק של ±10%.
+      הגרעון מוצג לצורך מידע בלבד.
+    </div>
+    <div id="deficit-list"></div>
+
+  </div>
+
+  <div id="balance-view" style="display:none">
+
+    <div class="balance-disclaimer">
+      ⚠️ שריפת הקלוריות מבוססת על נוסחת MET — הערכה גסה בלבד, עלולה לטעות ב-30–50%.
+      המאזן לא קשור ליעד הקלורי היומי ולא משפיע עליו.
+    </div>
+
+    <div id="balance-no-weight" style="display:none" class="balance-no-weight">
+      כדי לחשב שריפת קלוריות — הזן משקל בטאב ⚖️ מעקב משקל.
+    </div>
+
+    <div id="balance-list"></div>
+
+  </div>
+
+  <div id="settings-view" style="display:none">
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">👤 שם להצגה</div>
+      <div class="weight-input-row">
+        <input type="text" id="set-username" class="food-name-input" placeholder="שמך" maxlength="30"
+               onkeydown="if(event.key==='Enter')saveSettingField('userName')" style="max-width:220px">
+        <button onclick="saveSettingField('userName')" class="weight-save-btn">שמור</button>
+      </div>
+      <div id="set-msg-name" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">🎯 יעד קלורי יומי</div>
+      <div class="weight-input-row">
+        <input type="number" id="set-goal" class="act-duration-input" min="500" max="5000" step="50"
+               onkeydown="if(event.key==='Enter')saveSettingField('dailyGoal')" style="width:120px">
+        <span class="weight-unit">קל'</span>
+        <button onclick="saveSettingField('dailyGoal')" class="weight-save-btn">שמור</button>
+      </div>
+      <div id="set-msg-goal" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">🧬 נתונים לחישוב TDEE</div>
+      <div class="set-hint">משמשים לחישוב ההוצאה הקלורית היומית (Mifflin-St Jeor). המשקל נלקח ממעקב המשקל.</div>
+      <div class="tdee-fields">
+        <div class="tdee-field">
+          <label class="tdee-label">גיל</label>
+          <input type="number" id="set-age" class="act-duration-input" min="10" max="100" style="width:80px"
+                 onkeydown="if(event.key==='Enter')saveSettingField('tdee')">
+          <span class="weight-unit">שנים</span>
+        </div>
+        <div class="tdee-field">
+          <label class="tdee-label">גובה</label>
+          <input type="number" id="set-height" class="act-duration-input" min="100" max="250" style="width:80px"
+                 onkeydown="if(event.key==='Enter')saveSettingField('tdee')">
+          <span class="weight-unit">ס"מ</span>
+        </div>
+        <div class="tdee-field">
+          <label class="tdee-label">מין</label>
+          <select id="set-gender" class="act-type-select">
+            <option value="male">זכר</option>
+            <option value="female">נקבה</option>
+          </select>
+        </div>
+        <div class="tdee-field">
+          <label class="tdee-label">רמת פעילות</label>
+          <select id="set-activity-level" class="act-type-select">
+            <option value="sedentary">ישבני (ללא ספורט)</option>
+            <option value="light">קצת פעיל (1–3 ימים)</option>
+            <option value="moderate">ממוצע (3–5 ימים)</option>
+            <option value="active">פעיל (6–7 ימים)</option>
+            <option value="veryActive">מאוד פעיל</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="saveSettingField('tdee')" class="weight-save-btn" style="margin-top:12px">שמור</button>
+      <div id="set-msg-tdee" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">⚖️ משקל התחלתי</div>
+      <div class="set-hint">משמש לחישוב "ירידה כוללת". אם ריק — ישתמש ברשומה הראשונה.</div>
+      <div class="weight-input-row" style="margin-top:10px">
+        <input type="number" id="set-start-weight" class="act-duration-input" placeholder='ק"ג' step="0.1" min="30" max="300"
+               onkeydown="if(event.key==='Enter')saveSettingField('startingWeight')" style="width:120px">
+        <span class="weight-unit">ק"ג</span>
+        <button onclick="saveSettingField('startingWeight')" class="weight-save-btn">שמור</button>
+      </div>
+      <div id="set-msg-weight" class="weight-msg"></div>
+    </div>
+
+  </div>
+
+  <div id="activity-view" style="display:none">
+
+    <div class="act-stats-bar">
+      <div class="weight-stat">
+        <span class="weight-val" id="act-week-days">—</span>
+        <span class="weight-lbl">🗓️ ימים פעיל השבוע</span>
+      </div>
+      <div class="weight-stat">
+        <span class="weight-val" id="act-week-min">—</span>
+        <span class="weight-lbl">⏱️ דקות השבוע</span>
+      </div>
+      <div class="weight-stat">
+        <span class="weight-val" id="act-streak">—</span>
+        <span class="weight-lbl">🔥 רצף נוכחי</span>
+      </div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">➕ הוסף פעילות</div>
+      <div class="act-input-row">
+        <select id="act-type" class="act-type-select">
+          <option value="walking">🚶 הליכה</option>
+          <option value="running">🏃 ריצה</option>
+          <option value="training">💪 אימון</option>
+          <option value="swimming">🏊 שחייה</option>
+          <option value="cycling">🚴 רכיבה</option>
+          <option value="other">⚡ אחר</option>
+        </select>
+        <input type="number" id="act-duration" class="act-duration-input" placeholder="דקות" min="1" max="999"
+               onkeydown="if(event.key==='Enter')saveActivity()">
+        <span class="weight-unit">דק'</span>
+        <button onclick="saveActivity()" class="weight-save-btn">שמור</button>
+      </div>
+      <div class="act-note-row">
+        <input type="text" id="act-note" class="food-name-input" placeholder="תיאור קצר (אופציונלי)" maxlength="80"
+               onkeydown="if(event.key==='Enter')saveActivity()">
+      </div>
+      <div id="act-msg" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-history-card">
+      <div class="section-label">📋 היסטוריית פעילות</div>
+      <div id="act-history"></div>
+    </div>
+
+  </div>
+
+  <div id="weight-view" style="display:none">
+
+    <div class="weight-stats-bar">
+      <div class="weight-stat">
+        <span class="weight-val" id="w-current">—</span>
+        <span class="weight-lbl">⚖️ משקל נוכחי</span>
+      </div>
+      <div class="weight-stat">
+        <span class="weight-val" id="w-total-loss">—</span>
+        <span class="weight-lbl">📉 ירידה כוללת</span>
+      </div>
+      <div class="weight-stat">
+        <span class="weight-val" id="w-week-loss">—</span>
+        <span class="weight-lbl">📊 ירידה השבוע</span>
+      </div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">⚖️ הזן משקל הבוקר</div>
+      <div class="weight-input-row">
+        <input type="number" id="weight-input" placeholder="89.5" step="0.1" min="30" max="300"
+               onkeydown="if(event.key==='Enter')saveWeight()">
+        <span class="weight-unit">ק"ג</span>
+        <button onclick="saveWeight()" class="weight-save-btn">שמור</button>
+      </div>
+      <div id="weight-msg" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-chart-card">
+      <div class="section-label">📉 גרף ירידה במשקל</div>
+      <div id="weight-chart"></div>
+    </div>
+
+    <div class="weight-chart-card">
+      <div class="section-label">📊 מגמה משולבת — קלוריות × משקל</div>
+      <div id="trend-chart"></div>
+    </div>
+
+    <div class="weight-history-card">
+      <div class="section-label">📋 היסטוריה</div>
+      <div id="weight-history"></div>
+    </div>
+
+  </div>
+
+</div>
+ 
+<script>
+
+// ===== Date Helpers =====
+
+function dateToStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getWeekStart() {
+  const now = new Date();
+  const sun = new Date(now);
+  sun.setDate(now.getDate() - now.getDay());
+  sun.setHours(0,0,0,0);
+  return sun;
+}
+
+function tabIndexToDate(tabIdx) {
+  const sun = getWeekStart();
+  const d = new Date(sun);
+  d.setDate(sun.getDate() + tabIdx);
+  return dateToStr(d);
+}
+
+function dateStrToTabIdx(dateStr) {
+  for (let i = 0; i < 7; i++) {
+    if (tabIndexToDate(i) === dateStr) return i;
+  }
+  return -1;
+}
+
+// ===== Food Tracker (v2 — date-keyed, permanent history) =====
+
+const FOOD_KEY = 'foodTrackerV2';
+let DAILY_GOAL = 1800;
+const MEAL_KEYS = ['breakfast', 'lunch', 'dinner', 'snack'];
+const MEAL_LABELS = {
+  breakfast: '☀️ ארוחת בוקר',
+  lunch:     '🌤️ ארוחת צהריים',
+  dinner:    '🌙 ארוחת ערב',
+  snack:     '🍎 נשנוש'
+};
+
+function initEmptyDay() {
+  return { breakfast: [], lunch: [], dinner: [], snack: [] };
+}
+
+function loadFoodData() {
+  try {
+    const raw = localStorage.getItem(FOOD_KEY);
+    return raw ? JSON.parse(raw) : { days: {} };
+  } catch (e) { return { days: {} }; }
+}
+
+function saveFoodData(data) {
+  localStorage.setItem(FOOD_KEY, JSON.stringify(data));
+}
+
+function getDayTotal(dayData) {
+  if (!dayData) return 0;
+  return MEAL_KEYS.reduce((sum, m) => sum + (dayData[m] || []).reduce((s, it) => s + it.cal, 0), 0);
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addFoodItem(dateStr, meal) {
+  const nameEl = document.getElementById(`name-${dateStr}-${meal}`);
+  const calEl  = document.getElementById(`cal-${dateStr}-${meal}`);
+  const name = nameEl.value.trim();
+  const cal  = Math.round(parseFloat(calEl.value));
+
+  if (!name) {
+    nameEl.classList.add('input-error'); nameEl.focus();
+    setTimeout(() => nameEl.classList.remove('input-error'), 1500); return;
+  }
+  if (isNaN(cal) || cal < 0 || cal > 9999) {
+    calEl.classList.add('input-error'); calEl.focus();
+    setTimeout(() => calEl.classList.remove('input-error'), 1500); return;
+  }
+
+  const data = loadFoodData();
+  if (!data.days[dateStr]) data.days[dateStr] = initEmptyDay();
+  data.days[dateStr][meal].push({ name, cal });
+  saveFoodData(data);
+  saveFoodToHistory(name, cal);
+
+  const tabIdx = dateStrToTabIdx(dateStr);
+  if (tabIdx >= 0) renderDayContent(tabIdx, data);
+  buildCalendar();
+  renderWeeklySummary();
+  renderMonthlySummary();
+  const newName = document.getElementById(`name-${dateStr}-${meal}`);
+  if (newName) newName.focus();
+}
+
+function deleteFoodItem(dateStr, meal, idx) {
+  const data = loadFoodData();
+  if (data.days[dateStr] && data.days[dateStr][meal]) {
+    data.days[dateStr][meal].splice(idx, 1);
+    saveFoodData(data);
+    const tabIdx = dateStrToTabIdx(dateStr);
+    if (tabIdx >= 0) renderDayContent(tabIdx, data);
+    buildCalendar();
+    renderWeeklySummary();
+  renderMonthlySummary();
+  }
+}
+
+function renderDayContent(tabIdx, data) {
+  const card = document.getElementById(`day-card-${tabIdx}`);
+  if (!card) return;
+  if (!data) data = loadFoodData();
+
+  const dateStr  = tabIndexToDate(tabIdx);
+  const dayData  = data.days[dateStr] || initEmptyDay();
+  const total    = getDayTotal(dayData);
+  const remaining = DAILY_GOAL - total;
+  const pct      = Math.min(100, Math.round((total / DAILY_GOAL) * 100));
+  const barColor = pct >= 100 ? '#e05757' : pct >= 85 ? '#EF9F27' : '#1d9e75';
+  const isOver   = total > DAILY_GOAL;
+
+  let html = `
+    <div class="totals-bar">
+      <div class="total-item">
+        <span class="total-val${isOver ? ' over-goal' : ''}">${total.toLocaleString()}</span>
+        <span class="total-lbl">קלוריות היום</span>
+      </div>
+      <div class="total-item">
+        <span class="total-val">${DAILY_GOAL.toLocaleString()}</span>
+        <span class="total-lbl">יעד יומי</span>
+      </div>
+      <div class="total-item">
+        <span class="total-val${isOver ? ' over-goal' : ''}">${isOver ? '+'+Math.abs(remaining) : remaining}</span>
+        <span class="total-lbl">${isOver ? "חריגה בקל'" : "נותרו קל'"}</span>
+      </div>
+    </div>
+    <div class="cal-progress-wrap">
+      <div class="cal-progress-bar" style="width:${pct}%;background:${barColor}"></div>
+    </div>`;
+
+  MEAL_KEYS.forEach(mealKey => {
+    const items     = dayData[mealKey] || [];
+    const mealTotal = items.reduce((s, it) => s + it.cal, 0);
+    html += `
+      <div class="meal-section">
+        <div class="meal-label">${MEAL_LABELS[mealKey]}${mealTotal > 0 ? `&nbsp;<span class="meal-cal-tag">${mealTotal} קל'</span>` : ''}</div>
+        <div class="meal-card">`;
+    if (items.length) {
+      html += `<div class="food-list">`;
+      items.forEach((item, idx) => {
+        html += `<div class="food-row">
+            <span class="food-name">${escHtml(item.name)}</span>
+            <span class="badge cal">${item.cal} קל'</span>
+            <button class="food-del-btn" onclick="deleteFoodItem('${dateStr}','${mealKey}',${idx})" title="מחק">✕</button>
+          </div>`;
+      });
+      html += `</div>`;
+    } else {
+      html += `<div class="food-empty">עדיין לא הוספת מאכלים לארוחה זו</div>`;
+    }
+    html += `
+          <div class="food-add-row">
+            <input type="text" class="food-name-input" id="name-${dateStr}-${mealKey}"
+                   placeholder="שם המאכל" maxlength="60"
+                   oninput="foodNameInput(this)" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
+                   onkeydown="foodNameKeydown(this,event);if(event.key==='Enter'&&!event.defaultPrevented)document.getElementById('cal-${dateStr}-${mealKey}').focus()">
+            <input type="number" class="food-cal-input" id="cal-${dateStr}-${mealKey}"
+                   placeholder="קל'" min="0" max="9999" step="1"
+                   onkeydown="if(event.key==='Enter')addFoodItem('${dateStr}','${mealKey}')">
+            <button class="food-add-btn" onclick="addFoodItem('${dateStr}','${mealKey}')">הוסף</button>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  card.innerHTML = html;
+}
+
+// ===== Calendar =====
+
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+
+const H_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const H_DAYS   = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+const DAY_HDRS = ["א'","ב'","ג'","ד'","ה'","ו'","ש'"];
+
+function calPrev() {
+  calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; }
+  buildCalendar();
+}
+
+function calNext() {
+  const now = new Date();
+  if (calYear > now.getFullYear() || (calYear === now.getFullYear() && calMonth >= now.getMonth())) return;
+  calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; }
+  buildCalendar();
+}
+
+function buildCalendar() {
+  const card = document.getElementById('calendar-card');
+  if (!card) return;
+  card.innerHTML = renderCalendarHtml(calYear, calMonth, loadFoodData());
+}
+
+function renderCalendarHtml(year, month, data) {
+  const todayStr    = dateToStr(new Date());
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDow    = new Date(year, month, 1).getDay();
+  const now         = new Date();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+
+  let html = `
+    <div class="cal-header">
+      <button class="cal-nav-btn" onclick="calPrev()">›</button>
+      <span class="cal-title">${H_MONTHS[month]} ${year}</span>
+      <button class="cal-nav-btn${isCurrentMonth ? ' cal-nav-disabled' : ''}" onclick="calNext()">‹</button>
+    </div>
+    <div class="cal-grid">`;
+
+  DAY_HDRS.forEach(h => { html += `<div class="cal-day-hdr">${h}</div>`; });
+  for (let i = 0; i < startDow; i++) html += `<div class="cal-cell cal-empty"></div>`;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds      = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const total   = getDayTotal(data.days[ds]);
+    const isToday = ds === todayStr;
+    const isPast  = ds <= todayStr;
+    const hasData = total > 0;
+    const dot     = hasData ? (total > DAILY_GOAL+150 ? '#e05757' : total >= DAILY_GOAL ? '#EF9F27' : '#1d9e75') : '';
+    const cls     = ['cal-cell', isToday ? 'cal-today' : '', !isPast ? 'cal-future' : '', isPast && hasData ? 'cal-has-data' : ''].filter(Boolean).join(' ');
+    const click   = isPast && hasData ? ` onclick="showDayModal('${ds}')"` : '';
+
+    html += `<div class="${cls}"${click}>
+      <span class="cal-day-num">${d}</span>
+      ${dot ? `<span class="cal-dot" style="background:${dot}"></span>` : '<span class="cal-dot-ph"></span>'}
+    </div>`;
+  }
+
+  return html + '</div>';
+}
+
+function showDayModal(dateStr) {
+  const data    = loadFoodData();
+  const dayData = data.days[dateStr];
+  const dateObj = new Date(dateStr + 'T00:00:00');
+  const total   = getDayTotal(dayData);
+
+  document.getElementById('modal-date-title').textContent =
+    `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()} ${H_MONTHS[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+
+  let body = '';
+  if (!dayData || total === 0) {
+    body = '<div class="modal-empty">לא נרשמו ארוחות ביום זה</div>';
+  } else {
+    const tcls = total > DAILY_GOAL+150 ? 'over-goal' : total >= DAILY_GOAL ? 'on-goal' : '';
+    body += `<div class="modal-total ${tcls}">${total.toLocaleString()} קל' ביום</div>`;
+    MEAL_KEYS.forEach(mk => {
+      const items = dayData[mk] || [];
+      if (!items.length) return;
+      const mt = items.reduce((s, it) => s + it.cal, 0);
+      body += `<div class="modal-meal-section">
+        <div class="modal-meal-label">${MEAL_LABELS[mk]}&nbsp;<span class="meal-cal-tag">${mt} קל'</span></div>`;
+      items.forEach(item => {
+        body += `<div class="modal-food-row">
+          <span class="food-name">${escHtml(item.name)}</span>
+          <span class="badge cal">${item.cal} קל'</span>
+        </div>`;
+      });
+      body += '</div>';
+    });
+  }
+
+  document.getElementById('modal-body').innerHTML = body;
+  document.getElementById('day-modal').style.display = '';
+}
+
+function closeDayModal() {
+  document.getElementById('day-modal').style.display = 'none';
+}
+
+// ===== Weight Tracker =====
+
+const WEIGHT_KEY = 'weightTrackerV1';
+
+function loadWeightData() {
+  try {
+    const raw = localStorage.getItem(WEIGHT_KEY);
+    return raw ? JSON.parse(raw) : { entries: [] };
+  } catch (e) { return { entries: [] }; }
+}
+
+function saveWeightData(data) {
+  localStorage.setItem(WEIGHT_KEY, JSON.stringify(data));
+}
+
+function todayDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function fmtDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const hdays = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  return `${hdays[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
+}
+
+function saveWeight() {
+  const input = document.getElementById('weight-input');
+  const msg = document.getElementById('weight-msg');
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < 30 || val > 300) {
+    msg.style.color = '#e05757';
+    msg.textContent = 'אנא הזן משקל תקין (30–300 ק"ג)';
+    return;
+  }
+  const data = loadWeightData();
+  const today = todayDate();
+  const idx = data.entries.findIndex(e => e.date === today);
+  if (idx >= 0) data.entries[idx].weight = val;
+  else {
+    data.entries.push({ date: today, weight: val });
+    data.entries.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  saveWeightData(data);
+  input.value = '';
+  input.placeholder = `היום: ${val}`;
+  msg.style.color = '';
+  msg.textContent = `✓ נשמר — ${val} ק"ג (${fmtDate(today)})`;
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+  renderWeightPage();
+}
+
+function deleteWeightEntry(date) {
+  if (!confirm('למחוק את הרשומה הזו?')) return;
+  const data = loadWeightData();
+  data.entries = data.entries.filter(e => e.date !== date);
+  saveWeightData(data);
+  renderWeightPage();
+}
+
+function buildWeightChart(entries) {
+  if (entries.length < 2) return '<div class="weight-chart-empty">הזן לפחות 2 ימים לצפייה בגרף</div>';
+  const show = entries.slice(-21);
+  const weights = show.map(e => e.weight);
+  const rawMin = Math.min(...weights), rawMax = Math.max(...weights);
+  const spread = rawMax - rawMin || 1;
+  const minW = rawMin - spread * 0.25, maxW = rawMax + spread * 0.25;
+  const pL = 40, pR = 10, pT = 16, pB = 28;
+  const cW = 560, cH = 140;
+  const sW = cW + pL + pR, sH = cH + pT + pB;
+  const tx = i => pL + (i / (show.length - 1)) * cW;
+  const ty = w => pT + (1 - (w - minW) / (maxW - minW)) * cH;
+
+  let grid = '';
+  for (let s = 0; s <= 4; s++) {
+    const w = minW + (s / 4) * (maxW - minW);
+    const y = ty(w).toFixed(1);
+    grid += `<line x1="${pL}" y1="${y}" x2="${pL+cW}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
+    grid += `<text x="${pL-4}" y="${(+y+4).toFixed(1)}" text-anchor="end" font-size="9" fill="#555" font-family="Heebo,sans-serif">${w.toFixed(1)}</text>`;
+  }
+
+  const pts = show.map((e,i) => `${tx(i).toFixed(1)},${ty(e.weight).toFixed(1)}`).join(' ');
+  const area = `${pL},${(pT+cH).toFixed(1)} ${pts} ${(pL+cW).toFixed(1)},${(pT+cH).toFixed(1)}`;
+
+  const step = Math.ceil(show.length / 6);
+  let xlabels = '';
+  show.forEach((e,i) => {
+    if (i % step === 0 || i === show.length-1) {
+      const d = new Date(e.date+'T00:00:00');
+      xlabels += `<text x="${tx(i).toFixed(1)}" y="${sH-3}" text-anchor="middle" font-size="9" fill="#555" font-family="Heebo,sans-serif">${d.getDate()}/${d.getMonth()+1}</text>`;
+    }
+  });
+
+  let dots = '';
+  show.forEach((e,i) => {
+    const x = tx(i).toFixed(1), y = ty(e.weight).toFixed(1);
+    const d = new Date(e.date+'T00:00:00');
+    const isToday = e.date === todayDate();
+    dots += `<circle cx="${x}" cy="${y}" r="${isToday ? 5 : 3.5}" fill="${isToday ? '#5DCAA5' : '#1d9e75'}" stroke="#0e0e0e" stroke-width="1.5"><title>${d.getDate()}/${d.getMonth()+1}: ${e.weight} ק"ג</title></circle>`;
+  });
+
+  const last = show[show.length-1];
+  const lx = tx(show.length-1).toFixed(1);
+  const ly = (ty(last.weight) - 12).toFixed(1);
+
+  return `<svg viewBox="0 0 ${sW} ${sH}" width="100%" style="overflow:visible" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1d9e75" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#1d9e75" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${grid}
+    <polygon points="${area}" fill="url(#wGrad)"/>
+    <polyline points="${pts}" fill="none" stroke="#1d9e75" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    <text x="${lx}" y="${ly}" text-anchor="middle" font-size="10" fill="#5DCAA5" font-family="Heebo,sans-serif" font-weight="bold">${last.weight}</text>
+    ${xlabels}
+  </svg>`;
+}
+
+function buildWeightHistory(entries) {
+  if (!entries.length) return '<div class="weight-no-data">אין נתונים עדיין — הזן את המשקל הראשון למעלה</div>';
+  const rows = [...entries].reverse().map((e, i, arr) => {
+    const prev = arr[i+1];
+    let chg = '—', cls = '';
+    if (prev) {
+      const d = +(e.weight - prev.weight).toFixed(2);
+      if (d < 0) chg = `▼ ${Math.abs(d).toFixed(1)} ק"ג`;
+      else if (d > 0) { chg = `▲ ${d.toFixed(1)} ק"ג`; cls = 'gain'; }
+      else chg = '= ללא שינוי';
+    }
+    const isToday = e.date === todayDate();
+    return `<tr${isToday ? ' class="today-row"' : ''}>
+      <td>${fmtDate(e.date)}${isToday ? ' <span class="today-badge">היום</span>' : ''}</td>
+      <td>${e.weight} ק"ג</td>
+      <td class="${cls}">${chg}</td>
+      <td><button class="del-btn" onclick="deleteWeightEntry('${e.date}')" title="מחק">✕</button></td>
+    </tr>`;
+  }).join('');
+  return `<table class="weight-history-table">
+    <thead><tr><th>יום</th><th>משקל</th><th>שינוי</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderWeightPage() {
+  const { entries } = loadWeightData();
+  const cur   = entries.length ? entries[entries.length-1].weight : null;
+  const sett  = loadSettings();
+  const start = sett.startingWeight || (entries.length ? entries[0].weight : null);
+  const totalLoss = (start !== null && cur !== null) ? +(start - cur).toFixed(2) : null;
+
+  let weekLoss = null;
+  if (entries.length >= 2 && cur !== null) {
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 7);
+    const d7str = d7.toISOString().slice(0, 10);
+    const ref = [...entries].reverse().find(e => e.date <= d7str);
+    if (ref) weekLoss = +(ref.weight - cur).toFixed(2);
+  }
+
+  document.getElementById('w-current').textContent = cur !== null ? `${cur} ק"ג` : '—';
+
+  const lossEl = document.getElementById('w-total-loss');
+  if (totalLoss !== null) {
+    lossEl.textContent = totalLoss > 0 ? `-${totalLoss.toFixed(1)} ק"ג` : totalLoss < 0 ? `+${Math.abs(totalLoss).toFixed(1)} ק"ג` : '= ללא שינוי';
+    lossEl.className = 'weight-val' + (totalLoss > 0 ? ' loss' : totalLoss < 0 ? ' gain' : '');
+  } else {
+    lossEl.textContent = '—';
+    lossEl.className = 'weight-val';
+  }
+
+  const wkEl = document.getElementById('w-week-loss');
+  if (weekLoss !== null) {
+    wkEl.textContent = weekLoss > 0 ? `-${weekLoss.toFixed(1)} ק"ג` : weekLoss < 0 ? `+${Math.abs(weekLoss).toFixed(1)} ק"ג` : '= ללא שינוי';
+    wkEl.className = 'weight-val' + (weekLoss > 0 ? ' loss' : weekLoss < 0 ? ' gain' : '');
+  } else {
+    wkEl.textContent = '—';
+    wkEl.className = 'weight-val';
+  }
+
+  const todayEntry = entries.find(e => e.date === todayDate());
+  const inp = document.getElementById('weight-input');
+  if (inp && !inp.value) inp.placeholder = todayEntry ? `היום: ${todayEntry.weight}` : '89.5';
+
+  document.getElementById('weight-chart').innerHTML  = buildWeightChart(entries);
+  document.getElementById('trend-chart').innerHTML   = buildTrendChart();
+  document.getElementById('weight-history').innerHTML = buildWeightHistory(entries);
+}
+
+// ===== Trend Chart (weight × calories) =====
+
+function buildTrendChart() {
+  const weightData = loadWeightData();
+  const foodData   = loadFoodData();
+
+  if (weightData.entries.length < 2)
+    return '<div class="weight-chart-empty">הזן לפחות 2 מדידות משקל לצפייה בגרף המגמה</div>';
+
+  // ── Weight: enumerate all days + linear interpolation ──
+  const knownW = weightData.entries;
+  const wMap   = {};
+  knownW.forEach(e => { wMap[e.date] = e.weight; });
+
+  const allDays = [];
+  const cur = new Date(knownW[0].date + 'T00:00:00');
+  const end = new Date(dateToStr(new Date()) + 'T00:00:00');
+  while (cur <= end) { allDays.push(dateToStr(cur)); cur.setDate(cur.getDate() + 1); }
+
+  const daily = allDays.map((ds, i) => {
+    if (wMap[ds] !== undefined) return { date: ds, w: wMap[ds], known: true };
+    let pi = -1, ni = -1;
+    for (let j = i-1; j >= 0; j--)            { if (wMap[allDays[j]] !== undefined) { pi = j; break; } }
+    for (let j = i+1; j < allDays.length; j++) { if (wMap[allDays[j]] !== undefined) { ni = j; break; } }
+    if (pi < 0 && ni < 0) return null;
+    if (pi < 0) return { date: ds, w: wMap[allDays[ni]], known: false };
+    if (ni < 0) return { date: ds, w: wMap[allDays[pi]], known: false };
+    const r = (i - pi) / (ni - pi);
+    return { date: ds, w: +(wMap[allDays[pi]] + (wMap[allDays[ni]] - wMap[allDays[pi]]) * r).toFixed(2), known: false };
+  }).filter(Boolean);
+
+  const show = daily.slice(-90);
+  if (show.length < 2) return '<div class="weight-chart-empty">אין נתונים מספיקים לגרף המגמה</div>';
+  const showStart = show[0].date, showEnd = show[show.length-1].date;
+
+  // ── Calories: weekly averages (logged days only) ──
+  const calByWeek = {};
+  Object.entries(foodData.days || {}).forEach(([ds, dayData]) => {
+    if (ds < showStart || ds > showEnd) return;
+    const d = new Date(ds + 'T00:00:00');
+    const sun = new Date(d); sun.setDate(d.getDate() - d.getDay());
+    const wk = dateToStr(sun);
+    const total = getDayTotal(dayData);
+    if (total > 0) { (calByWeek[wk] = calByWeek[wk] || []).push(total); }
+  });
+
+  const weekDots = Object.entries(calByWeek).map(([wk, totals]) => {
+    const avg  = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+    const midD = new Date(wk + 'T00:00:00'); midD.setDate(midD.getDate() + 3);
+    const midDs = dateToStr(midD);
+    if (midDs < showStart || midDs > showEnd) return null;
+    return { date: midDs, avg, count: totals.length, weekStart: wk };
+  }).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+
+  // ── Scales ──
+  const wVals = show.map(d => d.w);
+  const wSpread = (Math.max(...wVals) - Math.min(...wVals)) || 0.5;
+  const wLo = Math.min(...wVals) - wSpread * 0.35;
+  const wHi = Math.max(...wVals) + wSpread * 0.35;
+
+  const cVals = weekDots.map(d => d.avg);
+  const hasCals = cVals.length > 0;
+  const cLo = hasCals ? Math.min(...cVals) * 0.88 : 1000;
+  const cHi = hasCals ? Math.max(...cVals) * 1.12 : 2500;
+
+  // ── Layout ──
+  const pL = 46, pR = 46, pT = 24, pB = 30;
+  const cW = 530, cH = 155;
+  const sW = cW + pL + pR, sH = cH + pT + pB;
+
+  const startMs = new Date(showStart + 'T00:00:00').getTime();
+  const endMs   = new Date(showEnd   + 'T00:00:00').getTime();
+  const txD = ds => pL + ((new Date(ds + 'T00:00:00').getTime() - startMs) / (endMs - startMs)) * cW;
+  const twY = w => pT + (1 - (w  - wLo) / (wHi - wLo)) * cH;
+  const tcY = c => pT + (1 - (c  - cLo) / (cHi - cLo)) * cH;
+
+  // ── Grid ──
+  let grid = '';
+  for (let i = 0; i <= 4; i++) {
+    const y = (pT + (i / 4) * cH).toFixed(1);
+    grid += `<line x1="${pL}" y1="${y}" x2="${pL+cW}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
+    grid += `<text x="${pL+cW+5}" y="${(+y+3.5).toFixed(1)}" font-size="9" fill="#5DCAA5" font-family="Heebo,sans-serif">${(wHi-(i/4)*(wHi-wLo)).toFixed(1)}</text>`;
+    if (hasCals)
+      grid += `<text x="${pL-4}" y="${(+y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="#EF9F27" font-family="Heebo,sans-serif">${Math.round(cHi-(i/4)*(cHi-cLo)).toLocaleString()}</text>`;
+  }
+
+  // ── Weight line + area ──
+  const wPts = show.map(d => `${txD(d.date).toFixed(1)},${twY(d.w).toFixed(1)}`).join(' ');
+  const wArea = `${pL},${(pT+cH).toFixed(1)} ${wPts} ${(pL+cW).toFixed(1)},${(pT+cH).toFixed(1)}`;
+
+  let wDots = '';
+  show.filter(d => d.known).forEach(d => {
+    const x = txD(d.date).toFixed(1), y = twY(d.w).toFixed(1);
+    const dt = new Date(d.date + 'T00:00:00');
+    wDots += `<circle cx="${x}" cy="${y}" r="3" fill="#1d9e75" stroke="#0e0e0e" stroke-width="1.5"><title>${dt.getDate()}/${dt.getMonth()+1}: ${d.w} ק"ג</title></circle>`;
+  });
+
+  // ── Calorie dots ──
+  let cDots = '';
+  weekDots.forEach(d => {
+    const x = txD(d.date).toFixed(1), y = tcY(d.avg).toFixed(1);
+    const sun = new Date(d.weekStart + 'T00:00:00');
+    cDots += `<circle cx="${x}" cy="${y}" r="5.5" fill="#EF9F27" stroke="#0e0e0e" stroke-width="1.5" opacity="0.9"><title>שבוע ${sun.getDate()}/${sun.getMonth()+1}: ממוצע ${d.avg.toLocaleString()} קל' (${d.count} ימים)</title></circle>`;
+  });
+
+  // ── X labels ──
+  let xlabels = '';
+  const step = Math.max(1, Math.ceil(show.length / 6));
+  show.forEach((d, i) => {
+    if (i % step === 0 || i === show.length-1) {
+      const dt = new Date(d.date + 'T00:00:00');
+      xlabels += `<text x="${txD(d.date).toFixed(1)}" y="${sH-3}" text-anchor="middle" font-size="9" fill="#555" font-family="Heebo,sans-serif">${dt.getDate()}/${dt.getMonth()+1}</text>`;
+    }
+  });
+
+  const noCalsNote = !hasCals ? `<text x="${sW/2}" y="${pT+cH/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.12)" font-family="Heebo,sans-serif">אין נתוני קלוריות לתקופה זו</text>` : '';
+
+  return `<svg viewBox="0 0 ${sW} ${sH}" width="100%" style="overflow:visible" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1d9e75" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#1d9e75" stop-opacity="0"/>
+    </linearGradient></defs>
+    <text x="${pL}" y="13" font-size="9" fill="#5DCAA5" font-family="Heebo,sans-serif">— משקל (ק"ג)</text>
+    <text x="${pL+cW}" y="13" text-anchor="end" font-size="9" fill="#EF9F27" font-family="Heebo,sans-serif">● ממוצע קלורי שבועי</text>
+    ${grid}
+    <polygon points="${wArea}" fill="url(#trendGrad)"/>
+    <polyline points="${wPts}" fill="none" stroke="#1d9e75" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${wDots}${cDots}${noCalsNote}${xlabels}
+  </svg>`;
+}
+
+// ===== Excel Export (SpreadsheetML — no CDN needed) =====
+
+function exportToExcel() {
+  const data        = loadFoodData();
+  const sortedDates = Object.keys(data.days).sort();
+
+  if (!sortedDates.length) {
+    alert('אין נתונים לייצוא עדיין');
+    return;
+  }
+
+  const x   = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const td  = (v, t='String') => `<Cell><Data ss:Type="${t}">${x(v)}</Data></Cell>`;
+  const tr  = cells => `<Row>${cells.join('')}</Row>`;
+
+  // ── גיליון 1: פירוט ──
+  const detail = [
+    tr([td('תאריך'), td('יום'), td('ארוחה'), td('שם המאכל'), td("קל'")])
+  ];
+
+  sortedDates.forEach(ds => {
+    const dayData = data.days[ds];
+    const dateObj = new Date(ds + 'T00:00:00');
+    let first = true;
+
+    MEAL_KEYS.forEach(mk => {
+      (dayData[mk] || []).forEach((item, i) => {
+        detail.push(tr([
+          td(first && i === 0 ? ds                       : ''),
+          td(first && i === 0 ? H_DAYS[dateObj.getDay()] : ''),
+          td(i === 0          ? MEAL_LABELS[mk]           : ''),
+          td(item.name),
+          td(item.cal, 'Number')
+        ]));
+        if (i === 0) first = false;
+      });
+    });
+  });
+
+  // ── גיליון 2: סיכום יומי ──
+  const summary = [
+    tr([td('תאריך'), td('יום'), td('ארוחת בוקר'), td('ארוחת צהריים'),
+        td('ארוחת ערב'), td('נשנוש'), td("סה\"כ קל'"), td('יעד'), td('הפרש')])
+  ];
+
+  sortedDates.forEach(ds => {
+    const dayData    = data.days[ds];
+    const dateObj    = new Date(ds + 'T00:00:00');
+    const mealTotals = MEAL_KEYS.map(mk => (dayData[mk] || []).reduce((s, it) => s + it.cal, 0));
+    const total      = mealTotals.reduce((a, b) => a + b, 0);
+    summary.push(tr([
+      td(ds), td(H_DAYS[dateObj.getDay()]),
+      ...mealTotals.map(t => td(t, 'Number')),
+      td(total, 'Number'), td(DAILY_GOAL, 'Number'), td(total - DAILY_GOAL, 'Number')
+    ]));
+  });
+
+  // ── גיליון 3: גרעון יומי ──
+  const effectiveExport = getEffectiveTDEE();
+  const tdeeExport = effectiveExport ? effectiveExport.tdee : null;
+  const tdeeSourceLabel = effectiveExport
+    ? (effectiveExport.source === 'dynamic' ? `דינמי (${effectiveExport.weeks} שבועות)` : 'סטטי (Mifflin-St Jeor)')
+    : '';
+  const deficit = [
+    tr([td('תאריך'), td('יום'), td("קלוריות אכולות"), td(`TDEE משוער (${tdeeSourceLabel})`), td('גרעון (−) / עודף (+)')])
+  ];
+
+  if (tdeeExport) {
+    sortedDates.forEach(ds => {
+      const dateObj = new Date(ds + 'T00:00:00');
+      const eaten   = getDayTotal(data.days[ds]);
+      const diff    = tdeeExport - eaten;
+      deficit.push(tr([
+        td(ds), td(H_DAYS[dateObj.getDay()]),
+        td(eaten, 'Number'), td(tdeeExport, 'Number'), td(diff, 'Number')
+      ]));
+    });
+  } else {
+    deficit.push(tr([td('חסרים נתוני TDEE — הזן גיל, גובה ומין בהגדרות')]));
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Worksheet ss:Name="פירוט ארוחות"><Table>${detail.join('')}</Table></Worksheet>
+  <Worksheet ss:Name="סיכום יומי"><Table>${summary.join('')}</Table></Worksheet>
+  <Worksheet ss:Name="גרעון יומי"><Table>${deficit.join('')}</Table></Worksheet>
+</Workbook>`;
+
+  const blob = new Blob(['﻿' + xml], { type: 'application/vnd.ms-excel' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: `מעקב-קלוריות-${dateToStr(new Date())}.xls` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ===== Build UI =====
+
+function switchView(view) {
+  document.getElementById('menu-view').style.display      = view === 'menu'     ? '' : 'none';
+  document.getElementById('weight-view').style.display    = view === 'weight'   ? '' : 'none';
+  document.getElementById('activity-view').style.display  = view === 'activity' ? '' : 'none';
+  document.getElementById('deficit-view').style.display   = view === 'deficit'  ? '' : 'none';
+  document.getElementById('balance-view').style.display   = view === 'balance'  ? '' : 'none';
+  document.getElementById('settings-view').style.display  = view === 'settings' ? '' : 'none';
+  document.querySelectorAll('.main-nav-btn').forEach((b, i) => {
+    b.classList.toggle('active',
+      (view === 'menu'     && i === 0) ||
+      (view === 'weight'   && i === 1) ||
+      (view === 'activity' && i === 2) ||
+      (view === 'deficit'  && i === 3) ||
+      (view === 'balance'  && i === 4) ||
+      (view === 'settings' && i === 5)
+    );
+  });
+  if (view === 'weight')   renderWeightPage();
+  if (view === 'activity') renderActivityPage();
+  if (view === 'deficit')  renderDeficitPage();
+  if (view === 'balance')  renderBalancePage();
+  if (view === 'settings') renderSettingsPage();
+}
+
+function show(i) {
+  document.querySelectorAll('.tab-btn').forEach((b, j) => b.classList.toggle('active', i === j));
+  document.querySelectorAll('.day-card').forEach((c, j) => c.classList.toggle('visible', i === j));
+}
+
+function buildDays() {
+  const container = document.getElementById('days');
+  container.innerHTML = '';
+  const data     = loadFoodData();
+  const todayIdx = new Date().getDay(); // 0=Sun … 6=Sat
+
+  for (let i = 0; i < 7; i++) {
+    const dc = document.createElement('div');
+    dc.className = 'day-card' + (i === todayIdx ? ' visible' : '');
+    dc.id = `day-card-${i}`;
+    container.appendChild(dc);
+    renderDayContent(i, data);
+  }
+
+  document.querySelectorAll('.tab-btn').forEach((b, j) => {
+    b.classList.toggle('active', j === todayIdx);
+    b.classList.toggle('today-tab', j === todayIdx);
+  });
+
+  buildCalendar();
+
+  const ws = getWeekStart();
+  const we = new Date(ws); we.setDate(ws.getDate() + 6);
+  const fd = d => `${d.getDate()}/${d.getMonth()+1}`;
+  document.getElementById('reset-info').textContent = `שבוע נוכחי: ${fd(ws)}–${fd(we)}`;
+  renderWeeklySummary();
+  renderMonthlySummary();
+}
+
+// ===== Food History & Autocomplete =====
+
+const FOOD_HIST_KEY = 'foodHistoryV1';
+
+function loadFoodHistory() {
+  try { const r = localStorage.getItem(FOOD_HIST_KEY); return r ? JSON.parse(r) : {}; }
+  catch { return {}; }
+}
+
+function saveFoodToHistory(name, cal) {
+  const hist = loadFoodHistory();
+  hist[name] = cal;
+  localStorage.setItem(FOOD_HIST_KEY, JSON.stringify(hist));
+}
+
+let acActiveIdx = -1;
+
+function foodNameInput(el) {
+  const query = el.value.trim().toLowerCase();
+  const dd = document.getElementById('autocomplete-dropdown');
+  dd._src = el;
+  acActiveIdx = -1;
+  if (!query) { hideAutocomplete(); return; }
+
+  const hist = loadFoodHistory();
+  const matches = Object.entries(hist)
+    .filter(([n]) => n.toLowerCase().includes(query))
+    .sort(([a], [b]) => {
+      const as = a.toLowerCase().startsWith(query), bs = b.toLowerCase().startsWith(query);
+      if (as && !bs) return -1; if (!as && bs) return 1;
+      return a.localeCompare(b, 'he');
+    })
+    .slice(0, 8);
+
+  if (!matches.length) { hideAutocomplete(); return; }
+
+  const rect = el.getBoundingClientRect();
+  dd.style.top  = (rect.bottom + window.scrollY + 3) + 'px';
+  dd.style.left = rect.left + 'px';
+  dd.style.width = rect.width + 'px';
+  dd.style.display = '';
+  dd.innerHTML = matches.map(([name, cal]) =>
+    `<div class="autocomplete-item" onmousedown="applyAutocomplete(event,this)" data-name="${escHtml(name)}" data-cal="${cal}">
+      <span>${escHtml(name)}</span><span class="autocomplete-cal">${cal} קל'</span>
+    </div>`
+  ).join('');
+}
+
+function applyAutocomplete(event, item) {
+  event.preventDefault();
+  const dd = document.getElementById('autocomplete-dropdown');
+  const nameInput = dd._src;
+  if (!nameInput) return;
+  nameInput.value = item.dataset.name;
+  const calInput = document.getElementById(nameInput.id.replace(/^name-/, 'cal-'));
+  if (calInput) calInput.value = item.dataset.cal;
+  hideAutocomplete();
+  if (calInput) { calInput.focus(); calInput.select(); }
+}
+
+function hideAutocomplete() {
+  const dd = document.getElementById('autocomplete-dropdown');
+  if (dd) dd.style.display = 'none';
+  acActiveIdx = -1;
+}
+
+function foodNameKeydown(el, event) {
+  const dd = document.getElementById('autocomplete-dropdown');
+  if (!dd || dd.style.display === 'none') return;
+  const items = dd.querySelectorAll('.autocomplete-item');
+  if (!items.length) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    acActiveIdx = (acActiveIdx + 1) % items.length;
+    items.forEach((it, i) => it.classList.toggle('ac-active', i === acActiveIdx));
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    acActiveIdx = acActiveIdx <= 0 ? items.length - 1 : acActiveIdx - 1;
+    items.forEach((it, i) => it.classList.toggle('ac-active', i === acActiveIdx));
+  } else if (event.key === 'Enter' && acActiveIdx >= 0) {
+    event.preventDefault();
+    applyAutocomplete({ preventDefault: () => {} }, items[acActiveIdx]);
+  } else if (event.key === 'Escape') {
+    hideAutocomplete();
+  }
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#autocomplete-dropdown') && !e.target.closest('.food-name-input'))
+    hideAutocomplete();
+});
+
+// ===== Weekly Summary =====
+
+function renderWeeklySummary() {
+  const container = document.getElementById('weekly-summary');
+  if (!container) return;
+  const data = loadFoodData();
+  const weekDays = Array.from({ length: 7 }, (_, i) => tabIndexToDate(i));
+  const totals = weekDays.map(ds => getDayTotal(data.days[ds]));
+  const tracked = totals.filter(t => t > 0);
+
+  if (!tracked.length) {
+    container.innerHTML = `<div class="weekly-summary-card">
+      <div class="weekly-summary-title">📊 סיכום שבועי</div>
+      <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:8px 0">אין נתונים לשבוע זה</div>
+    </div>`;
+    return;
+  }
+
+  const avg = Math.round(tracked.reduce((a, b) => a + b, 0) / tracked.length);
+  const underGoal = totals.filter(t => t > 0 && t <= DAILY_GOAL).length;
+  const overGoal  = totals.filter(t => t > DAILY_GOAL).length;
+  const best  = Math.min(...tracked);
+  const worst = Math.max(...tracked);
+  const avgCls = avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL+150 ? 'amber' : 'red';
+
+  container.innerHTML = `<div class="weekly-summary-card">
+    <div class="weekly-summary-title">סיכום שבועי</div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">ימים מתועדים</span>
+      <span class="weekly-stat-val">${tracked.length}/7</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">ממוצע יומי</span>
+      <span class="weekly-stat-val ${avgCls}">${avg.toLocaleString()} קל'</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">מתחת ליעד</span>
+      <span class="weekly-stat-val green">${underGoal} ימים</span>
+    </div>
+    ${overGoal > 0 ? `<div class="weekly-stat-row">
+      <span class="weekly-stat-label">מעל יעד</span>
+      <span class="weekly-stat-val red">${overGoal} ימים</span>
+    </div>` : ''}
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">יום הכי טוב</span>
+      <span class="weekly-stat-val green">${best.toLocaleString()} קל'</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">יום הכי גרוע</span>
+      <span class="weekly-stat-val ${worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green'}">${worst.toLocaleString()} קל'</span>
+    </div>
+  </div>`;
+}
+
+// ===== Monthly Summary =====
+
+function renderMonthlySummary() {
+  const container = document.getElementById('monthly-summary');
+  if (!container) return;
+  const data = loadFoodData();
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = dateToStr(now);
+
+  const monthDays = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (ds <= todayStr) monthDays.push(ds);
+  }
+
+  const totals = monthDays.map(ds => getDayTotal(data.days[ds]));
+  const tracked = totals.filter(t => t > 0);
+
+  if (!tracked.length) {
+    container.innerHTML = `<div class="weekly-summary-card">
+      <div class="weekly-summary-title">📅 סיכום חודשי — ${H_MONTHS[month]}</div>
+      <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:8px 0">אין נתונים לחודש זה</div>
+    </div>`;
+    return;
+  }
+
+  const avg = Math.round(tracked.reduce((a, b) => a + b, 0) / tracked.length);
+  const underGoal = totals.filter(t => t > 0 && t <= DAILY_GOAL).length;
+  const overGoal  = totals.filter(t => t > DAILY_GOAL).length;
+  const best  = Math.min(...tracked);
+  const worst = Math.max(...tracked);
+  const avgCls = avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL+150 ? 'amber' : 'red';
+
+  container.innerHTML = `<div class="weekly-summary-card">
+    <div class="weekly-summary-title">סיכום חודשי — ${H_MONTHS[month]}</div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">ימים מתועדים</span>
+      <span class="weekly-stat-val">${tracked.length}/${daysInMonth}</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">ממוצע יומי</span>
+      <span class="weekly-stat-val ${avgCls}">${avg.toLocaleString()} קל'</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">מתחת ליעד</span>
+      <span class="weekly-stat-val green">${underGoal} ימים</span>
+    </div>
+    ${overGoal > 0 ? `<div class="weekly-stat-row">
+      <span class="weekly-stat-label">מעל יעד</span>
+      <span class="weekly-stat-val red">${overGoal} ימים</span>
+    </div>` : ''}
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">יום הכי טוב</span>
+      <span class="weekly-stat-val green">${best.toLocaleString()} קל'</span>
+    </div>
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">יום הכי גרוע</span>
+      <span class="weekly-stat-val ${worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green'}">${worst.toLocaleString()} קל'</span>
+    </div>
+  </div>`;
+}
+
+// ===== TDEE & Deficit =====
+
+const ACTIVITY_MULTIPLIERS = {
+  sedentary:  1.2,
+  light:      1.375,
+  moderate:   1.55,
+  active:     1.725,
+  veryActive: 1.9
+};
+
+function calcTDEE() {
+  const s = loadSettings();
+  const weight = getLatestWeight();
+  if (!weight || !s.age || !s.height) return null;
+  const bmr = s.gender === 'female'
+    ? (10 * weight) + (6.25 * s.height) - (5 * s.age) - 161
+    : (10 * weight) + (6.25 * s.height) - (5 * s.age) + 5;
+  return Math.round(bmr * (ACTIVITY_MULTIPLIERS[s.activityLevel] || 1.55));
+}
+
+function getMondayOfWeek(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function calcDynamicTDEE() {
+  const foodData   = loadFoodData();
+  const weightData = loadWeightData();
+  const ALPHA = 0.3;
+  const MAX_W = 1.5;
+
+  const calByWeek = {};
+  Object.keys(foodData.days).forEach(ds => {
+    const total = getDayTotal(foodData.days[ds]);
+    if (total <= 0) return;
+    const mon = getMondayOfWeek(ds);
+    if (!calByWeek[mon]) calByWeek[mon] = { total: 0, days: 0 };
+    calByWeek[mon].total += total;
+    calByWeek[mon].days  += 1;
+  });
+
+  const wByWeek = {};
+  weightData.entries.forEach(e => {
+    const mon = getMondayOfWeek(e.date);
+    if (!wByWeek[mon]) wByWeek[mon] = { total: 0, count: 0 };
+    wByWeek[mon].total += e.weight;
+    wByWeek[mon].count += 1;
+  });
+
+  const validWeeks = Object.keys(calByWeek)
+    .filter(mon => calByWeek[mon].days >= 2)
+    .sort();
+
+  if (validWeeks.length < 2) return null;
+
+  const seed = calcTDEE();
+  if (!seed) return null;
+
+  let ema = seed;
+  let weekCount = 0;
+
+  for (let i = 1; i < validWeeks.length; i++) {
+    const prevMon = validWeeks[i - 1];
+    const currMon = validWeeks[i];
+    const daysDiff = (new Date(currMon + 'T00:00:00') - new Date(prevMon + 'T00:00:00')) / 86400000;
+    if (daysDiff !== 7) continue;
+
+    const prevW = wByWeek[prevMon];
+    const currW = wByWeek[currMon];
+    if (!prevW || !currW) continue;
+
+    const avgCal = calByWeek[currMon].total / calByWeek[currMon].days;
+    let wChange  = (currW.total / currW.count) - (prevW.total / prevW.count);
+    wChange = Math.max(-MAX_W, Math.min(MAX_W, wChange));
+
+    const weekTDEE = avgCal - (wChange * 7700 / 7);
+    if (weekTDEE < 1000 || weekTDEE > 5000) continue;
+
+    ema = ALPHA * weekTDEE + (1 - ALPHA) * ema;
+    weekCount++;
+  }
+
+  return weekCount > 0 ? { tdee: Math.round(ema), weeks: weekCount } : null;
+}
+
+function getEffectiveTDEE() {
+  const dynamic = calcDynamicTDEE();
+  if (dynamic) return { tdee: dynamic.tdee, source: 'dynamic', weeks: dynamic.weeks };
+  const staticVal = calcTDEE();
+  if (staticVal) return { tdee: staticVal, source: 'static' };
+  return null;
+}
+
+function renderDeficitPage() {
+  const effective = getEffectiveTDEE();
+  const foodData  = loadFoodData();
+  const s         = loadSettings();
+
+  const tdeeBar = document.getElementById('deficit-tdee-bar');
+  if (!effective) {
+    tdeeBar.innerHTML = '<div class="balance-no-weight">הזן גיל, גובה ומין בהגדרות, ומשקל בטאב ⚖️ מעקב משקל.</div>';
+    document.getElementById('deficit-list').innerHTML = '';
+    return;
+  }
+
+  const tdee     = effective.tdee;
+  const weight   = getLatestWeight();
+  const actLabel = { sedentary:'ישבני', light:'קצת פעיל', moderate:'ממוצע', active:'פעיל', veryActive:'מאוד פעיל' };
+  const sourceLabel = effective.source === 'dynamic'
+    ? `דינמי (${effective.weeks} ${effective.weeks === 1 ? 'שבוע' : 'שבועות'})`
+    : 'סטטי (Mifflin-St Jeor)';
+  tdeeBar.innerHTML = `<div class="deficit-tdee-card">
+    <div class="deficit-tdee-row">
+      <span class="deficit-tdee-lbl">TDEE משוער</span>
+      <span class="deficit-tdee-val">${tdee.toLocaleString()} קל' / יום</span>
+    </div>
+    <div class="deficit-tdee-meta">${weight} ק"ג · ${s.age} שנים · ${s.height} ס"מ · ${actLabel[s.activityLevel] || ''}</div>
+    <div class="deficit-tdee-source">מקור: ${sourceLabel}</div>
+  </div>`;
+
+  // All days with calorie data, newest first
+  const allDays = Object.keys(foodData.days)
+    .filter(ds => getDayTotal(foodData.days[ds]) > 0)
+    .sort((a, b) => b.localeCompare(a));
+
+  if (!allDays.length) {
+    document.getElementById('deficit-list').innerHTML = '<div class="act-no-data">אין נתוני קלוריות עדיין</div>';
+    return;
+  }
+
+  let html = '';
+  allDays.forEach(ds => {
+    const eaten    = getDayTotal(foodData.days[ds]);
+    const deficit  = tdee - eaten;
+    const isDeficit = deficit > 0;
+    const dateObj  = new Date(ds + 'T00:00:00');
+    const isToday  = ds === dateToStr(new Date());
+    const dateLabel = `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}`;
+    const defCls   = isDeficit ? 'green' : deficit > -150 ? 'amber' : 'red';
+
+    html += `<div class="deficit-day-card">
+      <div class="deficit-day-top">
+        <span class="balance-day-label">${dateLabel}${isToday ? ' <span class="today-badge">היום</span>' : ''}</span>
+        <span class="deficit-badge ${defCls}">${isDeficit ? '▼ גרעון' : '▲ עודף'} ${Math.abs(deficit).toLocaleString()} קל'</span>
+      </div>
+      <div class="deficit-bar-wrap">
+        <div class="deficit-bar-fill" style="width:${Math.min(100, Math.round((eaten/tdee)*100))}%;background:${isDeficit ? '#1d9e75' : deficit > -150 ? '#EF9F27' : '#e05757'}"></div>
+      </div>
+      <div class="deficit-numbers">
+        <span>אכלת <strong>${eaten.toLocaleString()}</strong> קל'</span>
+        <span>TDEE <strong>${tdee.toLocaleString()}</strong> קל'</span>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('deficit-list').innerHTML = html;
+}
+
+// ===== Balance Page =====
+
+function renderBalancePage() {
+  const actData  = loadActivityData();
+  const foodData = loadFoodData();
+  const weight   = getLatestWeight();
+
+  const noWeightEl = document.getElementById('balance-no-weight');
+  const listEl     = document.getElementById('balance-list');
+  noWeightEl.style.display = weight ? 'none' : '';
+
+  // All dates with activity, newest first
+  const activeDates = [...new Set(actData.entries.map(e => e.date))].sort((a,b) => b.localeCompare(a));
+
+  if (!activeDates.length) {
+    listEl.innerHTML = '<div class="act-no-data">אין ימי פעילות מתועדים עדיין</div>';
+    return;
+  }
+
+  let html = '';
+  activeDates.forEach(ds => {
+    const dayActs   = actData.entries.filter(e => e.date === ds);
+    const eaten     = getDayTotal(foodData.days[ds]);
+    const dateObj   = new Date(ds + 'T00:00:00');
+    const dateLabel = `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}/${dateObj.getFullYear()}`;
+    const isToday   = ds === dateToStr(new Date());
+
+    const totalBurned = weight
+      ? dayActs.reduce((sum, e) => {
+          const met = (ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met;
+          return sum + Math.round(met * weight * (e.duration / 60));
+        }, 0)
+      : null;
+
+    const net = (eaten > 0 && totalBurned !== null) ? eaten - totalBurned : null;
+    const netCls = net === null ? '' : net <= DAILY_GOAL ? 'green' : net <= DAILY_GOAL + 150 ? 'amber' : 'red';
+
+    // Activities list
+    const actsHtml = dayActs.map(e => {
+      const at  = ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other;
+      const cal = weight ? Math.round(at.met * weight * (e.duration / 60)) : null;
+      return `<span class="balance-act-chip">${at.emoji} ${at.label} ${e.duration} דק'${cal ? ` · ~${cal} קל'` : ''}</span>`;
+    }).join('');
+
+    html += `<div class="balance-day-card">
+      <div class="balance-day-header">
+        <span class="balance-day-label">${dateLabel}${isToday ? ' <span class="today-badge">היום</span>' : ''}</span>
+      </div>
+      <div class="balance-acts">${actsHtml}</div>
+      <div class="balance-stats">
+        <div class="balance-stat">
+          <span class="balance-stat-val">${eaten > 0 ? eaten.toLocaleString() : '—'}</span>
+          <span class="balance-stat-lbl">קלוריות אכולות</span>
+        </div>
+        <span class="balance-op">−</span>
+        <div class="balance-stat">
+          <span class="balance-stat-val amber">~${totalBurned !== null ? totalBurned.toLocaleString() : '—'}</span>
+          <span class="balance-stat-lbl">הערכת שריפה</span>
+        </div>
+        <span class="balance-op">=</span>
+        <div class="balance-stat">
+          <span class="balance-stat-val ${netCls}">${net !== null ? net.toLocaleString() : '—'}</span>
+          <span class="balance-stat-lbl">נטו</span>
+        </div>
+      </div>
+      ${eaten === 0 ? '<div class="balance-no-food">לא הוזנו קלוריות ליום זה — הנטו לא זמין</div>' : ''}
+    </div>`;
+  });
+
+  listEl.innerHTML = html;
+}
+
+// ===== Settings =====
+
+const SETTINGS_KEY = 'settingsV1';
+
+function loadSettings() {
+  const def = { dailyGoal: 1800, userName: 'אילן', startingWeight: null, age: 23, height: 180, gender: 'male', activityLevel: 'moderate' };
+  try {
+    const r = localStorage.getItem(SETTINGS_KEY);
+    return r ? Object.assign({}, def, JSON.parse(r)) : def;
+  } catch { return def; }
+}
+
+function saveSettings(data) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+}
+
+function updateLegend() {
+  const upper = DAILY_GOAL + 150;
+  const f = n => n.toLocaleString();
+  const lg = document.getElementById('legend-green');
+  const la = document.getElementById('legend-amber');
+  const lr = document.getElementById('legend-red');
+  if (lg) lg.textContent = `מתחת ל-${f(DAILY_GOAL)}`;
+  if (la) la.textContent = `${f(DAILY_GOAL)}–${f(upper)}`;
+  if (lr) lr.textContent = `מעל ${f(upper)}`;
+}
+
+function applySettings() {
+  const s = loadSettings();
+  DAILY_GOAL = s.dailyGoal || 1800;
+  const titleEl = document.getElementById('main-title');
+  if (titleEl) titleEl.textContent = `🥗 תפריט שבועי — ירידה במשקל של ${s.userName || 'אילן'}`;
+  updateLegend();
+}
+
+function renderSettingsPage() {
+  const s = loadSettings();
+  document.getElementById('set-username').value          = s.userName || '';
+  document.getElementById('set-goal').value              = s.dailyGoal || 1800;
+  document.getElementById('set-start-weight').value      = s.startingWeight || '';
+  document.getElementById('set-age').value               = s.age || '';
+  document.getElementById('set-height').value            = s.height || '';
+  document.getElementById('set-gender').value            = s.gender || 'male';
+  document.getElementById('set-activity-level').value   = s.activityLevel || 'moderate';
+}
+
+function saveSettingField(field) {
+  const s = loadSettings();
+
+  if (field === 'userName') {
+    const val = document.getElementById('set-username').value.trim();
+    if (!val) return;
+    s.userName = val;
+    saveSettings(s);
+    applySettings();
+    showSettingsMsg('name', `✓ שם עודכן ל-${val}`);
+  }
+
+  if (field === 'dailyGoal') {
+    const el  = document.getElementById('set-goal');
+    const val = parseInt(el.value);
+    if (!val || val < 500 || val > 5000) {
+      el.classList.add('input-error');
+      setTimeout(() => el.classList.remove('input-error'), 1500);
+      return;
+    }
+    s.dailyGoal = val;
+    saveSettings(s);
+    DAILY_GOAL = val;
+    applySettings();
+    buildDays();
+    buildCalendar();
+    renderWeeklySummary();
+    renderMonthlySummary();
+    showSettingsMsg('goal', `✓ יעד עודכן ל-${val.toLocaleString()} קל'`);
+  }
+
+  if (field === 'tdee') {
+    const age    = parseInt(document.getElementById('set-age').value);
+    const height = parseInt(document.getElementById('set-height').value);
+    if (!age || age < 10 || age > 100 || !height || height < 100 || height > 250) {
+      showSettingsMsg('tdee', 'אנא הזן גיל וגובה תקינים');
+      return;
+    }
+    s.age           = age;
+    s.height        = height;
+    s.gender        = document.getElementById('set-gender').value;
+    s.activityLevel = document.getElementById('set-activity-level').value;
+    saveSettings(s);
+    showSettingsMsg('tdee', '✓ נתוני TDEE עודכנו');
+  }
+
+  if (field === 'startingWeight') {
+    const el  = document.getElementById('set-start-weight');
+    const raw = el.value;
+    if (raw === '') {
+      s.startingWeight = null;
+    } else {
+      const num = parseFloat(raw);
+      if (isNaN(num) || num < 30 || num > 300) {
+        el.classList.add('input-error');
+        setTimeout(() => el.classList.remove('input-error'), 1500);
+        return;
+      }
+      s.startingWeight = num;
+    }
+    saveSettings(s);
+    renderWeightPage();
+    showSettingsMsg('weight', s.startingWeight ? `✓ משקל התחלתי: ${s.startingWeight} ק"ג` : '✓ ישתמש ברשומה הראשונה');
+  }
+}
+
+function showSettingsMsg(id, text) {
+  const el = document.getElementById(`set-msg-${id}`);
+  if (!el) return;
+  el.textContent = text;
+  setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+// ===== Activity Tracker =====
+
+const ACTIVITY_KEY = 'activityTrackerV1';
+
+const ACTIVITY_TYPES = {
+  walking:  { label: 'הליכה', emoji: '🚶', met: 3.5 },
+  running:  { label: 'ריצה',  emoji: '🏃', met: 8.0 },
+  training: { label: 'אימון', emoji: '💪', met: 5.0 },
+  swimming: { label: 'שחייה',emoji: '🏊', met: 6.0 },
+  cycling:  { label: 'רכיבה',emoji: '🚴', met: 7.0 },
+  other:    { label: 'אחר',  emoji: '⚡', met: 4.0 }
+};
+
+function loadActivityData() {
+  try { const r = localStorage.getItem(ACTIVITY_KEY); return r ? JSON.parse(r) : { entries: [] }; }
+  catch { return { entries: [] }; }
+}
+
+function saveActivityData(data) {
+  localStorage.setItem(ACTIVITY_KEY, JSON.stringify(data));
+}
+
+function saveActivity() {
+  const durEl = document.getElementById('act-duration');
+  const dur   = parseInt(durEl.value);
+  if (!dur || dur < 1 || dur > 999) {
+    durEl.classList.add('input-error');
+    setTimeout(() => durEl.classList.remove('input-error'), 1500);
+    return;
+  }
+  const type = document.getElementById('act-type').value;
+  const note = document.getElementById('act-note').value.trim();
+  const data = loadActivityData();
+  data.entries.push({ id: Date.now(), date: dateToStr(new Date()), type, duration: dur, note });
+  data.entries.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  saveActivityData(data);
+
+  durEl.value = '';
+  document.getElementById('act-note').value = '';
+  const at = ACTIVITY_TYPES[type];
+  const msg = document.getElementById('act-msg');
+  msg.textContent = `✓ נשמר — ${at.emoji} ${at.label} ${dur} דק'`;
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+  renderActivityPage();
+}
+
+function deleteActivity(id) {
+  if (!confirm('למחוק את הרשומה?')) return;
+  const data = loadActivityData();
+  data.entries = data.entries.filter(e => e.id !== id);
+  saveActivityData(data);
+  renderActivityPage();
+}
+
+function getLatestWeight() {
+  const { entries } = loadWeightData();
+  return entries.length ? entries[entries.length - 1].weight : null;
+}
+
+function toggleCalEstimate(id) {
+  const el  = document.getElementById(`est-${id}`);
+  const btn = document.getElementById(`est-btn-${id}`);
+  if (!el || !btn) return;
+  const hidden = el.style.display === 'none';
+  el.style.display  = hidden ? '' : 'none';
+  btn.textContent   = hidden ? 'הסתר הערכה 🔥' : 'הצג הערכה 🔥';
+}
+
+function calcStreak(entries) {
+  const activeDates = new Set(entries.map(e => e.date));
+  const todayStr = dateToStr(new Date());
+  let streak = 0;
+  const d = new Date();
+  if (!activeDates.has(todayStr)) d.setDate(d.getDate() - 1);
+  while (activeDates.has(dateToStr(d))) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
+}
+
+function renderActivityPage() {
+  const { entries } = loadActivityData();
+  const todayStr = dateToStr(new Date());
+
+  // Weekly stats
+  const weekDays = new Set(Array.from({ length: 7 }, (_, i) => tabIndexToDate(i)));
+  const weekEntries = entries.filter(e => weekDays.has(e.date));
+  const weekActiveDays = new Set(weekEntries.map(e => e.date)).size;
+  const weekMinutes    = weekEntries.reduce((s, e) => s + e.duration, 0);
+  const streak = calcStreak(entries);
+
+  document.getElementById('act-week-days').textContent = `${weekActiveDays}/7`;
+  document.getElementById('act-week-min').textContent  = weekMinutes ? `${weekMinutes} דק'` : '—';
+  document.getElementById('act-streak').textContent    = streak ? `${streak} ימים` : '—';
+
+  // History grouped by date
+  const grouped = {};
+  entries.forEach(e => { (grouped[e.date] = grouped[e.date] || []).push(e); });
+  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
+  let html = '';
+  if (!sortedDates.length) {
+    html = '<div class="act-no-data">עדיין לא תועדה פעילות — הוסף את האימון הראשון למעלה</div>';
+  } else {
+    sortedDates.forEach(ds => {
+      const dateObj  = new Date(ds + 'T00:00:00');
+      const isToday  = ds === todayStr;
+      const dayTotal = grouped[ds].reduce((s, e) => s + e.duration, 0);
+      const dayLabel = isToday ? 'היום' : `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}`;
+
+      html += `<div class="act-day-group">
+        <div class="act-day-header">
+          <span class="act-day-label">${dayLabel}${isToday ? ' <span class="today-badge">היום</span>' : ''}</span>
+          <span class="act-day-total">${dayTotal} דק' סה"כ</span>
+        </div>`;
+
+      const weight = getLatestWeight();
+      grouped[ds].forEach(e => {
+        const at     = ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other;
+        const estCal = weight ? Math.round(at.met * weight * (e.duration / 60)) : null;
+        const estContent = estCal !== null
+          ? `<span class="act-est-cal">~${estCal} קל'</span><span class="act-est-warning">הערכה גסה בלבד — עלולה לטעות ב-30–50%</span>`
+          : `<span class="act-est-warning">הזן משקל בטאב ⚖️ מעקב משקל לקבלת הערכה</span>`;
+        html += `<div class="act-entry-wrap">
+          <div class="act-entry">
+            <span class="act-emoji">${at.emoji}</span>
+            <span class="act-entry-label">${at.label}</span>
+            <span class="act-duration-badge">${e.duration} דק'</span>
+            ${e.note ? `<span class="act-note">${escHtml(e.note)}</span>` : ''}
+            <button class="act-est-btn" id="est-btn-${e.id}" onclick="toggleCalEstimate(${e.id})">הצג הערכה 🔥</button>
+            <button class="food-del-btn" onclick="deleteActivity(${e.id})" title="מחק">✕</button>
+          </div>
+          <div class="act-estimate" id="est-${e.id}" style="display:none">${estContent}</div>
+        </div>`;
+      });
+      html += '</div>';
+    });
+  }
+  document.getElementById('act-history').innerHTML = html;
+}
+
+// ===== Backup & Restore =====
+
+function exportBackup() {
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    foodData:     loadFoodData(),
+    weightData:   loadWeightData(),
+    foodHistory:  loadFoodHistory(),
+    activityData: loadActivityData(),
+    settings:     loadSettings()
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  Object.assign(document.createElement('a'), {
+    href: url, download: `גיבוי-תזונה-${dateToStr(new Date())}.json`
+  }).click();
+  URL.revokeObjectURL(url);
+}
+
+function importBackup() {
+  document.getElementById('restore-input').click();
+}
+
+function handleRestoreFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const backup = JSON.parse(e.target.result);
+      if (!backup.foodData || !backup.weightData) { alert('קובץ גיבוי לא תקין'); return; }
+      if (!confirm('שחזור יחליף את כל הנתונים הנוכחיים. להמשיך?')) return;
+      saveFoodData(backup.foodData);
+      saveWeightData(backup.weightData);
+      if (backup.foodHistory)  localStorage.setItem(FOOD_HIST_KEY, JSON.stringify(backup.foodHistory));
+      if (backup.activityData) saveActivityData(backup.activityData);
+      if (backup.settings)     saveSettings(backup.settings);
+      applySettings();
+      buildDays();
+      renderWeightPage();
+      alert('הנתונים שוחזרו בהצלחה');
+    } catch { alert('שגיאה בקריאת הקובץ'); }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDayModal(); });
+
+applySettings();
+buildDays();
+</script>
+
+<div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none;position:absolute"></div>
+
+<div id="day-modal" class="day-modal" style="display:none">
+  <div class="day-modal-bg" onclick="closeDayModal()"></div>
+  <div class="day-modal-box">
+    <div class="day-modal-header">
+      <h3 id="modal-date-title"></h3>
+      <button class="modal-close" onclick="closeDayModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+</body>
+</html>
