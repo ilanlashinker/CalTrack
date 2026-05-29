@@ -12,7 +12,7 @@
 <div class="container">
  
   <header class="header">
-    <h1 id="main-title">🥗 תפריט שבועי — ירידה במשקל של אילן</h1>
+    <h1 id="main-title">🥗 תפריט שבועי ירידה במשקל של אילן</h1>
     <div class="reset-info" id="reset-info"></div>
   </header>
 
@@ -65,6 +65,12 @@
     <div class="balance-disclaimer">
       ⚠️ TDEE מחושב לפי נוסחת Mifflin-St Jeor עם המשקל האחרון שנמדד — הערכה בדיוק של ±10%.
       הגרעון מוצג לצורך מידע בלבד.
+    </div>
+    <div id="deficit-sort-bar" class="deficit-sort-bar" style="display:none">
+      <button class="deficit-sort-btn active" id="dsort-date-desc" onclick="setDeficitSort('date-desc')">תאריך: חדש → ישן</button>
+      <button class="deficit-sort-btn" id="dsort-date-asc" onclick="setDeficitSort('date-asc')">תאריך: ישן → חדש</button>
+      <button class="deficit-sort-btn" id="dsort-deficit-desc" onclick="setDeficitSort('deficit-desc')">גרעון: גבוה → נמוך</button>
+      <button class="deficit-sort-btn" id="dsort-deficit-asc" onclick="setDeficitSort('deficit-asc')">גרעון: נמוך → גבוה</button>
     </div>
     <div id="deficit-list"></div>
 
@@ -1225,6 +1231,13 @@ function renderMonthlySummary() {
 
 // ===== TDEE & Deficit =====
 
+let deficitSortMode = 'date-desc';
+
+function setDeficitSort(mode) {
+  deficitSortMode = mode;
+  renderDeficitPage();
+}
+
 const ACTIVITY_MULTIPLIERS = {
   sedentary:  1.2,
   light:      1.375,
@@ -1346,12 +1359,40 @@ function renderDeficitPage() {
     <div class="deficit-tdee-source">מקור: ${sourceLabel}</div>
   </div>`;
 
-  // All days with calorie data, newest first
+  // Sort bar
+  const sortBar = document.getElementById('deficit-sort-bar');
+  if (sortBar) {
+    sortBar.style.display = '';
+    ['date-desc','date-asc','deficit-desc','deficit-asc'].forEach(m => {
+      const btn = document.getElementById(`dsort-${m}`);
+      if (btn) btn.classList.toggle('active', m === deficitSortMode);
+    });
+  }
+
+  // All days with calorie data
   const allDays = Object.keys(foodData.days)
-    .filter(ds => getDayTotal(foodData.days[ds]) > 0)
-    .sort((a, b) => b.localeCompare(a));
+    .filter(ds => getDayTotal(foodData.days[ds]) > 0);
+
+  if (deficitSortMode === 'date-asc') {
+    allDays.sort((a, b) => a.localeCompare(b));
+  } else if (deficitSortMode === 'deficit-desc') {
+    allDays.sort((a, b) => {
+      const da = tdee - getDayTotal(foodData.days[a]);
+      const db = tdee - getDayTotal(foodData.days[b]);
+      return db - da;
+    });
+  } else if (deficitSortMode === 'deficit-asc') {
+    allDays.sort((a, b) => {
+      const da = tdee - getDayTotal(foodData.days[a]);
+      const db = tdee - getDayTotal(foodData.days[b]);
+      return da - db;
+    });
+  } else {
+    allDays.sort((a, b) => b.localeCompare(a));
+  }
 
   if (!allDays.length) {
+    if (sortBar) sortBar.style.display = 'none';
     document.getElementById('deficit-list').innerHTML = '<div class="act-no-data">אין נתוני קלוריות עדיין</div>';
     return;
   }

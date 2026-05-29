@@ -1342,6 +1342,38 @@ body {
   transition: width 0.4s ease;
 }
 
+.deficit-sort-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.deficit-sort-btn {
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  font-family: 'Heebo', sans-serif;
+}
+
+.deficit-sort-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.deficit-sort-btn.active {
+  background: var(--green-light);
+  border-color: var(--green-mid);
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
 .deficit-numbers {
   display: flex;
   justify-content: space-between;
