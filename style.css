@@ -1342,6 +1342,50 @@ body {
   transition: width 0.4s ease;
 }
 
+.deficit-cumulative-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 1rem;
+}
+
+.deficit-cumulative-row {
+  display: flex;
+  gap: 2.5rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.deficit-cumulative-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.deficit-cumulative-val {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.deficit-cumulative-val.green { color: var(--green-dark); }
+.deficit-cumulative-val.red   { color: #e05757; }
+
+.deficit-cumulative-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
+
+.deficit-cumulative-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .deficit-sort-bar {
   display: flex;
   gap: 6px;
