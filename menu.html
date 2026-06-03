@@ -66,6 +66,7 @@
       ⚠️ TDEE מחושב לפי נוסחת Mifflin-St Jeor עם המשקל האחרון שנמדד — הערכה בדיוק של ±10%.
       הגרעון מוצג לצורך מידע בלבד.
     </div>
+    <div id="deficit-cumulative-card"></div>
     <div id="deficit-sort-bar" class="deficit-sort-bar" style="display:none">
       <button class="deficit-sort-btn active" id="dsort-date-desc" onclick="setDeficitSort('date-desc')">תאריך: חדש → ישן</button>
       <button class="deficit-sort-btn" id="dsort-date-asc" onclick="setDeficitSort('date-asc')">תאריך: ישן → חדש</button>
@@ -1393,9 +1394,32 @@ function renderDeficitPage() {
 
   if (!allDays.length) {
     if (sortBar) sortBar.style.display = 'none';
+    document.getElementById('deficit-cumulative-card').innerHTML = '';
     document.getElementById('deficit-list').innerHTML = '<div class="act-no-data">אין נתוני קלוריות עדיין</div>';
     return;
   }
+
+  // Cumulative deficit summary — only logged days
+  const totalDeficit = allDays.reduce((sum, ds) => sum + (tdee - getDayTotal(foodData.days[ds])), 0);
+  const fatKg = totalDeficit / 7700;
+  const firstDay = [...allDays].sort()[0];
+  const firstDateObj = new Date(firstDay + 'T00:00:00');
+  const firstLabel = `${firstDateObj.getDate()}/${firstDateObj.getMonth()+1}/${firstDateObj.getFullYear()}`;
+  const isOverall = totalDeficit >= 0;
+  const cumulEl = document.getElementById('deficit-cumulative-card');
+  if (cumulEl) cumulEl.innerHTML = `<div class="deficit-cumulative-card">
+    <div class="deficit-cumulative-row">
+      <div class="deficit-cumulative-stat">
+        <span class="deficit-cumulative-val ${isOverall ? 'green' : 'red'}">${Math.abs(Math.round(totalDeficit)).toLocaleString()}</span>
+        <span class="deficit-cumulative-lbl">קל' ${isOverall ? 'גרעון מצטבר' : 'עודף מצטבר'}</span>
+      </div>
+      <div class="deficit-cumulative-stat">
+        <span class="deficit-cumulative-val ${isOverall ? 'green' : 'red'}">${Math.abs(fatKg).toFixed(2)}</span>
+        <span class="deficit-cumulative-lbl">ק"ג שומן ${isOverall ? 'תיאורטי שנשרף' : 'תיאורטי שנצבר'}</span>
+      </div>
+    </div>
+    <div class="deficit-cumulative-meta">מבוסס על ${allDays.length} ימים מתועדים · מ-${firstLabel} עד היום · ימים ללא נתונים לא נכללו</div>
+  </div>`;
 
   let html = '';
   allDays.forEach(ds => {
