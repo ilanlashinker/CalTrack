@@ -1386,6 +1386,12 @@ body {
   color: var(--text-muted);
 }
 
+.act-bonus {
+  font-size: 11px;
+  color: var(--amber-dark);
+  font-weight: 600;
+}
+
 .deficit-sort-bar {
   display: flex;
   gap: 6px;

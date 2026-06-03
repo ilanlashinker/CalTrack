@@ -1347,6 +1347,7 @@ function renderDeficitPage() {
 
   const tdee     = effective.tdee;
   const weight   = getLatestWeight();
+  const actData  = loadActivityData();
   const actLabel = { sedentary:'ישבני', light:'קצת פעיל', moderate:'ממוצע', active:'פעיל', veryActive:'מאוד פעיל' };
   const sourceLabel = effective.source === 'dynamic'
     ? `דינמי (${effective.weeks} ${effective.weeks === 1 ? 'שבוע' : 'שבועות'})`
@@ -1399,8 +1400,14 @@ function renderDeficitPage() {
     return;
   }
 
-  // Cumulative deficit summary — only logged days
-  const totalDeficit = allDays.reduce((sum, ds) => sum + (tdee - getDayTotal(foodData.days[ds])), 0);
+  // Cumulative deficit summary — only logged days, TDEE adjusted per-day for activity
+  const totalDeficit = allDays.reduce((sum, ds) => {
+    const eaten = getDayTotal(foodData.days[ds]);
+    const dayBurned = weight ? actData.entries
+      .filter(e => e.date === ds)
+      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * weight * (e.duration / 60)), 0) : 0;
+    return sum + (tdee + dayBurned - eaten);
+  }, 0);
   const fatKg = totalDeficit / 7700;
   const firstDay = [...allDays].sort()[0];
   const firstDateObj = new Date(firstDay + 'T00:00:00');
@@ -1424,7 +1431,11 @@ function renderDeficitPage() {
   let html = '';
   allDays.forEach(ds => {
     const eaten    = getDayTotal(foodData.days[ds]);
-    const deficit  = tdee - eaten;
+    const dayBurned = weight ? actData.entries
+      .filter(e => e.date === ds)
+      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * weight * (e.duration / 60)), 0) : 0;
+    const adjustedTdee = tdee + dayBurned;
+    const deficit  = adjustedTdee - eaten;
     const isDeficit = deficit > 0;
     const dateObj  = new Date(ds + 'T00:00:00');
     const isToday  = ds === dateToStr(new Date());
@@ -1437,11 +1448,11 @@ function renderDeficitPage() {
         <span class="deficit-badge ${defCls}">${isDeficit ? '▼ גרעון' : '▲ עודף'} ${Math.abs(deficit).toLocaleString()} קל'</span>
       </div>
       <div class="deficit-bar-wrap">
-        <div class="deficit-bar-fill" style="width:${Math.min(100, Math.round((eaten/tdee)*100))}%;background:${isDeficit ? '#1d9e75' : deficit > -150 ? '#EF9F27' : '#e05757'}"></div>
+        <div class="deficit-bar-fill" style="width:${Math.min(100, Math.round((eaten/adjustedTdee)*100))}%;background:${isDeficit ? '#1d9e75' : deficit > -150 ? '#EF9F27' : '#e05757'}"></div>
       </div>
       <div class="deficit-numbers">
         <span>אכלת <strong>${eaten.toLocaleString()}</strong> קל'</span>
-        <span>TDEE <strong>${tdee.toLocaleString()}</strong> קל'</span>
+        <span>TDEE <strong>${adjustedTdee.toLocaleString()}</strong> קל'${dayBurned > 0 ? ` <span class="act-bonus">+${dayBurned.toLocaleString()} פעילות</span>` : ''}</span>
       </div>
     </div>`;
   });
