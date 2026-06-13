@@ -1433,6 +1433,13 @@ body {
 
 .deficit-numbers strong { color: var(--text-primary); }
 
+.deficit-day-debug {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
 /* ===== Settings — TDEE fields ===== */
 
 .tdee-fields {

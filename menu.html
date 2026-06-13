@@ -1247,9 +1247,9 @@ const ACTIVITY_MULTIPLIERS = {
   veryActive: 1.9
 };
 
-function calcTDEE() {
+function calcTDEE(w) {
   const s = loadSettings();
-  const weight = getLatestWeight();
+  const weight = w !== undefined ? w : getLatestWeight();
   if (!weight || !s.age || !s.height) return null;
   const bmr = s.gender === 'female'
     ? (10 * weight) + (6.25 * s.height) - (5 * s.age) - 161
@@ -1379,14 +1379,14 @@ function renderDeficitPage() {
     allDays.sort((a, b) => a.localeCompare(b));
   } else if (deficitSortMode === 'deficit-desc') {
     allDays.sort((a, b) => {
-      const da = tdee - getDayTotal(foodData.days[a]);
-      const db = tdee - getDayTotal(foodData.days[b]);
+      const da = (calcTDEEForDate(a, tdee) || tdee) - getDayTotal(foodData.days[a]);
+      const db = (calcTDEEForDate(b, tdee) || tdee) - getDayTotal(foodData.days[b]);
       return db - da;
     });
   } else if (deficitSortMode === 'deficit-asc') {
     allDays.sort((a, b) => {
-      const da = tdee - getDayTotal(foodData.days[a]);
-      const db = tdee - getDayTotal(foodData.days[b]);
+      const da = (calcTDEEForDate(a, tdee) || tdee) - getDayTotal(foodData.days[a]);
+      const db = (calcTDEEForDate(b, tdee) || tdee) - getDayTotal(foodData.days[b]);
       return da - db;
     });
   } else {
@@ -1403,10 +1403,12 @@ function renderDeficitPage() {
   // Cumulative deficit summary — only logged days, TDEE adjusted per-day for activity
   const totalDeficit = allDays.reduce((sum, ds) => {
     const eaten = getDayTotal(foodData.days[ds]);
-    const dayBurned = weight ? actData.entries
+    const dayWeight = getWeightOnDate(ds);
+    const dayTdee = calcTDEEForDate(ds, tdee) || tdee;
+    const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
-      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * weight * (e.duration / 60)), 0) : 0;
-    return sum + (tdee + dayBurned - eaten);
+      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
+    return sum + (dayTdee + dayBurned - eaten);
   }, 0);
   const fatKg = totalDeficit / 7700;
   const firstDay = [...allDays].sort()[0];
@@ -1430,17 +1432,19 @@ function renderDeficitPage() {
 
   let html = '';
   allDays.forEach(ds => {
-    const eaten    = getDayTotal(foodData.days[ds]);
-    const dayBurned = weight ? actData.entries
+    const eaten     = getDayTotal(foodData.days[ds]);
+    const dayWeight = getWeightOnDate(ds);
+    const dayTdee   = calcTDEEForDate(ds, tdee) || tdee;
+    const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
-      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * weight * (e.duration / 60)), 0) : 0;
-    const adjustedTdee = tdee + dayBurned;
-    const deficit  = adjustedTdee - eaten;
+      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
+    const adjustedTdee = dayTdee + dayBurned;
+    const deficit   = adjustedTdee - eaten;
     const isDeficit = deficit > 0;
-    const dateObj  = new Date(ds + 'T00:00:00');
-    const isToday  = ds === dateToStr(new Date());
+    const dateObj   = new Date(ds + 'T00:00:00');
+    const isToday   = ds === dateToStr(new Date());
     const dateLabel = `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}`;
-    const defCls   = isDeficit ? 'green' : deficit > -150 ? 'amber' : 'red';
+    const defCls    = isDeficit ? 'green' : deficit > -150 ? 'amber' : 'red';
 
     html += `<div class="deficit-day-card">
       <div class="deficit-day-top">
@@ -1454,6 +1458,7 @@ function renderDeficitPage() {
         <span>אכלת <strong>${eaten.toLocaleString()}</strong> קל'</span>
         <span>TDEE <strong>${adjustedTdee.toLocaleString()}</strong> קל'${dayBurned > 0 ? ` <span class="act-bonus">+${dayBurned.toLocaleString()} פעילות</span>` : ''}</span>
       </div>
+      <div class="deficit-day-debug">משקל: ${dayWeight ? dayWeight + ' ק"ג' : '—'} · TDEE בסיסי: ${dayTdee.toLocaleString()} קל'</div>
     </div>`;
   });
 
@@ -1465,11 +1470,10 @@ function renderDeficitPage() {
 function renderBalancePage() {
   const actData  = loadActivityData();
   const foodData = loadFoodData();
-  const weight   = getLatestWeight();
 
   const noWeightEl = document.getElementById('balance-no-weight');
   const listEl     = document.getElementById('balance-list');
-  noWeightEl.style.display = weight ? 'none' : '';
+  noWeightEl.style.display = getLatestWeight() ? 'none' : '';
 
   // All dates with activity, newest first
   const activeDates = [...new Set(actData.entries.map(e => e.date))].sort((a,b) => b.localeCompare(a));
@@ -1486,6 +1490,7 @@ function renderBalancePage() {
     const dateObj   = new Date(ds + 'T00:00:00');
     const dateLabel = `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}/${dateObj.getFullYear()}`;
     const isToday   = ds === dateToStr(new Date());
+    const weight    = getWeightOnDate(ds);
 
     const totalBurned = weight
       ? dayActs.reduce((sum, e) => {
@@ -1710,6 +1715,32 @@ function getLatestWeight() {
   return entries.length ? entries[entries.length - 1].weight : null;
 }
 
+function getWeightOnDate(dateStr) {
+  const { entries } = loadWeightData();
+  if (!entries.length) return null;
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  let best = null;
+  for (const e of sorted) {
+    if (e.date <= dateStr) best = e.weight;
+    else break;
+  }
+  return best !== null ? best : sorted[0].weight;
+}
+
+// Scale effectiveTdee proportionally by weight ratio so we preserve dynamic
+// calibration while accounting for historical weight differences.
+// When dayWeight == currentWeight the result equals effectiveTdee exactly.
+function calcTDEEForDate(dateStr, effectiveTdee) {
+  if (!effectiveTdee) return null;
+  const dayWeight     = getWeightOnDate(dateStr);
+  const currentWeight = getLatestWeight();
+  if (!dayWeight || !currentWeight) return effectiveTdee;
+  const dayStatic     = calcTDEE(dayWeight);
+  const currentStatic = calcTDEE(currentWeight);
+  if (!dayStatic || !currentStatic) return effectiveTdee;
+  return Math.round(effectiveTdee * (dayStatic / currentStatic));
+}
+
 function toggleCalEstimate(id) {
   const el  = document.getElementById(`est-${id}`);
   const btn = document.getElementById(`est-btn-${id}`);
@@ -1768,7 +1799,7 @@ function renderActivityPage() {
           <span class="act-day-total">${dayTotal} דק' סה"כ</span>
         </div>`;
 
-      const weight = getLatestWeight();
+      const weight = getWeightOnDate(ds);
       grouped[ds].forEach(e => {
         const at     = ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other;
         const estCal = weight ? Math.round(at.met * weight * (e.duration / 60)) : null;
