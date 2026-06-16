@@ -346,6 +346,7 @@ function addFoodItem(dateStr, meal) {
   if (!data.days[dateStr]) data.days[dateStr] = initEmptyDay();
   data.days[dateStr][meal].push({ name, cal });
   saveFoodData(data);
+  snapshotDayTdee(dateStr);
   saveFoodToHistory(name, cal);
 
   const tabIdx = dateStrToTabIdx(dateStr);
@@ -362,6 +363,7 @@ function deleteFoodItem(dateStr, meal, idx) {
   if (data.days[dateStr] && data.days[dateStr][meal]) {
     data.days[dateStr][meal].splice(idx, 1);
     saveFoodData(data);
+    snapshotDayTdee(dateStr);
     const tabIdx = dateStrToTabIdx(dateStr);
     if (tabIdx >= 0) renderDayContent(tabIdx, data);
     buildCalendar();
@@ -1265,29 +1267,36 @@ function getMondayOfWeek(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
-function calcDynamicTDEE() {
+// asOfDate (optional): bounds the calculation to only data dated on or before
+// that day, reconstructing what the dynamic TDEE would have been at that point
+// in time. Omit it for the live, current-moment calculation.
+function calcDynamicTDEE(asOfDate) {
   const foodData   = loadFoodData();
   const weightData = loadWeightData();
   const ALPHA = 0.3;
   const MAX_W = 1.5;
 
   const calByWeek = {};
-  Object.keys(foodData.days).forEach(ds => {
-    const total = getDayTotal(foodData.days[ds]);
-    if (total <= 0) return;
-    const mon = getMondayOfWeek(ds);
-    if (!calByWeek[mon]) calByWeek[mon] = { total: 0, days: 0 };
-    calByWeek[mon].total += total;
-    calByWeek[mon].days  += 1;
-  });
+  Object.keys(foodData.days)
+    .filter(ds => !asOfDate || ds <= asOfDate)
+    .forEach(ds => {
+      const total = getDayTotal(foodData.days[ds]);
+      if (total <= 0) return;
+      const mon = getMondayOfWeek(ds);
+      if (!calByWeek[mon]) calByWeek[mon] = { total: 0, days: 0 };
+      calByWeek[mon].total += total;
+      calByWeek[mon].days  += 1;
+    });
 
   const wByWeek = {};
-  weightData.entries.forEach(e => {
-    const mon = getMondayOfWeek(e.date);
-    if (!wByWeek[mon]) wByWeek[mon] = { total: 0, count: 0 };
-    wByWeek[mon].total += e.weight;
-    wByWeek[mon].count += 1;
-  });
+  weightData.entries
+    .filter(e => !asOfDate || e.date <= asOfDate)
+    .forEach(e => {
+      const mon = getMondayOfWeek(e.date);
+      if (!wByWeek[mon]) wByWeek[mon] = { total: 0, count: 0 };
+      wByWeek[mon].total += e.weight;
+      wByWeek[mon].count += 1;
+    });
 
   const validWeeks = Object.keys(calByWeek)
     .filter(mon => calByWeek[mon].days >= 2)
@@ -1295,7 +1304,7 @@ function calcDynamicTDEE() {
 
   if (validWeeks.length < 2) return null;
 
-  const seed = calcTDEE();
+  const seed = calcTDEE(asOfDate ? getWeightOnDate(asOfDate) : undefined);
   if (!seed) return null;
 
   let ema = seed;
@@ -1325,17 +1334,43 @@ function calcDynamicTDEE() {
   return weekCount > 0 ? { tdee: Math.round(ema), weeks: weekCount } : null;
 }
 
-function getEffectiveTDEE() {
-  const dynamic = calcDynamicTDEE();
+function getEffectiveTDEE(asOfDate) {
+  const dynamic = calcDynamicTDEE(asOfDate);
   if (dynamic) return { tdee: dynamic.tdee, source: 'dynamic', weeks: dynamic.weeks };
-  const staticVal = calcTDEE();
+  const staticVal = calcTDEE(asOfDate ? getWeightOnDate(asOfDate) : undefined);
   if (staticVal) return { tdee: staticVal, source: 'static' };
   return null;
 }
 
+// Snapshots the live effective TDEE onto a day's entry so its deficit never
+// shifts again once recorded, even as later weight/food data is added.
+function snapshotDayTdee(dateStr) {
+  const eff = getEffectiveTDEE();
+  if (!eff) return;
+  const data = loadFoodData();
+  if (!data.days[dateStr]) return;
+  data.days[dateStr].savedTdee = eff.tdee;
+  saveFoodData(data);
+}
+
+// One-time migration for days logged before snapshotting existed: reconstruct
+// what the dynamic TDEE would have been using only data available as of that
+// day, so old entries also get a stable savedTdee instead of the live value.
+function backfillSavedTdee(foodData) {
+  let changed = false;
+  Object.keys(foodData.days).forEach(ds => {
+    const day = foodData.days[ds];
+    if (getDayTotal(day) <= 0 || day.savedTdee != null) return;
+    const eff = getEffectiveTDEE(ds);
+    if (eff) { day.savedTdee = eff.tdee; changed = true; }
+  });
+  if (changed) saveFoodData(foodData);
+  return foodData;
+}
+
 function renderDeficitPage() {
   const effective = getEffectiveTDEE();
-  const foodData  = loadFoodData();
+  const foodData  = backfillSavedTdee(loadFoodData());
   const s         = loadSettings();
 
   const tdeeBar = document.getElementById('deficit-tdee-bar');
@@ -1379,14 +1414,14 @@ function renderDeficitPage() {
     allDays.sort((a, b) => a.localeCompare(b));
   } else if (deficitSortMode === 'deficit-desc') {
     allDays.sort((a, b) => {
-      const da = (calcTDEEForDate(a, tdee) || tdee) - getDayTotal(foodData.days[a]);
-      const db = (calcTDEEForDate(b, tdee) || tdee) - getDayTotal(foodData.days[b]);
+      const da = (foodData.days[a].savedTdee || tdee) - getDayTotal(foodData.days[a]);
+      const db = (foodData.days[b].savedTdee || tdee) - getDayTotal(foodData.days[b]);
       return db - da;
     });
   } else if (deficitSortMode === 'deficit-asc') {
     allDays.sort((a, b) => {
-      const da = (calcTDEEForDate(a, tdee) || tdee) - getDayTotal(foodData.days[a]);
-      const db = (calcTDEEForDate(b, tdee) || tdee) - getDayTotal(foodData.days[b]);
+      const da = (foodData.days[a].savedTdee || tdee) - getDayTotal(foodData.days[a]);
+      const db = (foodData.days[b].savedTdee || tdee) - getDayTotal(foodData.days[b]);
       return da - db;
     });
   } else {
@@ -1404,7 +1439,7 @@ function renderDeficitPage() {
   const totalDeficit = allDays.reduce((sum, ds) => {
     const eaten = getDayTotal(foodData.days[ds]);
     const dayWeight = getWeightOnDate(ds);
-    const dayTdee = calcTDEEForDate(ds, tdee) || tdee;
+    const dayTdee = foodData.days[ds].savedTdee || tdee;
     const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
       .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
@@ -1434,7 +1469,7 @@ function renderDeficitPage() {
   allDays.forEach(ds => {
     const eaten     = getDayTotal(foodData.days[ds]);
     const dayWeight = getWeightOnDate(ds);
-    const dayTdee   = calcTDEEForDate(ds, tdee) || tdee;
+    const dayTdee   = foodData.days[ds].savedTdee || tdee;
     const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
       .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
@@ -1458,7 +1493,7 @@ function renderDeficitPage() {
         <span>אכלת <strong>${eaten.toLocaleString()}</strong> קל'</span>
         <span>TDEE <strong>${adjustedTdee.toLocaleString()}</strong> קל'${dayBurned > 0 ? ` <span class="act-bonus">+${dayBurned.toLocaleString()} פעילות</span>` : ''}</span>
       </div>
-      <div class="deficit-day-debug">משקל: ${dayWeight ? dayWeight + ' ק"ג' : '—'} · TDEE בסיסי: ${dayTdee.toLocaleString()} קל'</div>
+      <div class="deficit-day-debug">משקל: ${dayWeight ? dayWeight + ' ק"ג' : '—'} · TDEE בסיסי (נשמר): ${dayTdee.toLocaleString()} קל'</div>
     </div>`;
   });
 
@@ -1725,20 +1760,6 @@ function getWeightOnDate(dateStr) {
     else break;
   }
   return best !== null ? best : sorted[0].weight;
-}
-
-// Scale effectiveTdee proportionally by weight ratio so we preserve dynamic
-// calibration while accounting for historical weight differences.
-// When dayWeight == currentWeight the result equals effectiveTdee exactly.
-function calcTDEEForDate(dateStr, effectiveTdee) {
-  if (!effectiveTdee) return null;
-  const dayWeight     = getWeightOnDate(dateStr);
-  const currentWeight = getLatestWeight();
-  if (!dayWeight || !currentWeight) return effectiveTdee;
-  const dayStatic     = calcTDEE(dayWeight);
-  const currentStatic = calcTDEE(currentWeight);
-  if (!dayStatic || !currentStatic) return effectiveTdee;
-  return Math.round(effectiveTdee * (dayStatic / currentStatic));
 }
 
 function toggleCalEstimate(id) {
