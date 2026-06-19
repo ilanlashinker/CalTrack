@@ -193,6 +193,7 @@
           <option value="training">💪 אימון</option>
           <option value="swimming">🏊 שחייה</option>
           <option value="cycling">🚴 רכיבה</option>
+          <option value="beach">🏖️ ים / חוף</option>
           <option value="other">⚡ אחר</option>
         </select>
         <input type="number" id="act-duration" class="act-duration-input" placeholder="דקות" min="1" max="999"
@@ -1442,7 +1443,7 @@ function renderDeficitPage() {
     const dayTdee = foodData.days[ds].savedTdee || tdee;
     const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
-      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
+      .reduce((s, e) => s + calcActivityCal(e.type, dayWeight, e.duration), 0) : 0;
     return sum + (dayTdee + dayBurned - eaten);
   }, 0);
   const fatKg = totalDeficit / 7700;
@@ -1472,7 +1473,7 @@ function renderDeficitPage() {
     const dayTdee   = foodData.days[ds].savedTdee || tdee;
     const dayBurned = dayWeight ? actData.entries
       .filter(e => e.date === ds)
-      .reduce((s, e) => s + Math.round((ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met * dayWeight * (e.duration / 60)), 0) : 0;
+      .reduce((s, e) => s + calcActivityCal(e.type, dayWeight, e.duration), 0) : 0;
     const adjustedTdee = dayTdee + dayBurned;
     const deficit   = adjustedTdee - eaten;
     const isDeficit = deficit > 0;
@@ -1528,10 +1529,7 @@ function renderBalancePage() {
     const weight    = getWeightOnDate(ds);
 
     const totalBurned = weight
-      ? dayActs.reduce((sum, e) => {
-          const met = (ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other).met;
-          return sum + Math.round(met * weight * (e.duration / 60));
-        }, 0)
+      ? dayActs.reduce((sum, e) => sum + calcActivityCal(e.type, weight, e.duration), 0)
       : null;
 
     const net = (eaten > 0 && totalBurned !== null) ? eaten - totalBurned : null;
@@ -1540,7 +1538,7 @@ function renderBalancePage() {
     // Activities list
     const actsHtml = dayActs.map(e => {
       const at  = ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other;
-      const cal = weight ? Math.round(at.met * weight * (e.duration / 60)) : null;
+      const cal = weight ? calcActivityCal(e.type, weight, e.duration) : null;
       return `<span class="balance-act-chip">${at.emoji} ${at.label} ${e.duration} דק'${cal ? ` · ~${cal} קל'` : ''}</span>`;
     }).join('');
 
@@ -1696,13 +1694,21 @@ function showSettingsMsg(id, text) {
 const ACTIVITY_KEY = 'activityTrackerV1';
 
 const ACTIVITY_TYPES = {
-  walking:  { label: 'הליכה', emoji: '🚶', met: 3.5 },
-  running:  { label: 'ריצה',  emoji: '🏃', met: 8.0 },
-  training: { label: 'אימון', emoji: '💪', met: 5.0 },
-  swimming: { label: 'שחייה',emoji: '🏊', met: 6.0 },
-  cycling:  { label: 'רכיבה',emoji: '🚴', met: 7.0 },
-  other:    { label: 'אחר',  emoji: '⚡', met: 4.0 }
+  walking:  { label: 'הליכה',    emoji: '🚶', met: 3.5 },
+  running:  { label: 'ריצה',     emoji: '🏃', met: 8.0 },
+  training: { label: 'אימון',    emoji: '💪', met: 5.0 },
+  swimming: { label: 'שחייה',    emoji: '🏊', met: 6.0 },
+  cycling:  { label: 'רכיבה',    emoji: '🚴', met: 7.0 },
+  beach:    { label: 'ים / חוף', emoji: '🏖️', met: 3.5,
+              calcCal: (weight, duration) => Math.round(3.5 * 3.5 * (weight / 200) * duration) },
+  other:    { label: 'אחר',      emoji: '⚡', met: 4.0 }
 };
+
+function calcActivityCal(type, weight, duration) {
+  const at = ACTIVITY_TYPES[type] || ACTIVITY_TYPES.other;
+  if (at.calcCal) return at.calcCal(weight, duration);
+  return Math.round(at.met * weight * (duration / 60));
+}
 
 function loadActivityData() {
   try { const r = localStorage.getItem(ACTIVITY_KEY); return r ? JSON.parse(r) : { entries: [] }; }
@@ -1823,7 +1829,7 @@ function renderActivityPage() {
       const weight = getWeightOnDate(ds);
       grouped[ds].forEach(e => {
         const at     = ACTIVITY_TYPES[e.type] || ACTIVITY_TYPES.other;
-        const estCal = weight ? Math.round(at.met * weight * (e.duration / 60)) : null;
+        const estCal = weight ? calcActivityCal(e.type, weight, e.duration) : null;
         const estContent = estCal !== null
           ? `<span class="act-est-cal">~${estCal} קל'</span><span class="act-est-warning">הערכה גסה בלבד — עלולה לטעות ב-30–50%</span>`
           : `<span class="act-est-warning">הזן משקל בטאב ⚖️ מעקב משקל לקבלת הערכה</span>`;
