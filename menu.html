@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex, nofollow" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>תפריט תזונה שבועי אילן</title>
+  <title>תפריט תזונה שבועי </title>
   <link rel="icon" type="image/png" href="icon-192.png" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
@@ -1906,8 +1906,23 @@ function handleRestoreFile(input) {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDayModal(); });
 
-applySettings();
-buildDays();
+function submitOnboarding() {
+  const name = document.getElementById('onboarding-name').value.trim();
+  if (!name) return;
+  const s = loadSettings();
+  s.userName = name;
+  saveSettings(s);
+  document.getElementById('onboarding-overlay').style.display = 'none';
+  applySettings();
+  buildDays();
+}
+
+if (localStorage.getItem(SETTINGS_KEY) === null) {
+  document.getElementById('onboarding-overlay').style.display = 'flex';
+} else {
+  applySettings();
+  buildDays();
+}
 </script>
 
 <div id="autocomplete-dropdown" class="autocomplete-dropdown" style="display:none;position:absolute"></div>
@@ -1920,6 +1935,18 @@ buildDays();
       <button class="modal-close" onclick="closeDayModal()">✕</button>
     </div>
     <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="onboarding-overlay" class="day-modal" style="display:none">
+  <div class="day-modal-bg"></div>
+  <div class="day-modal-box" style="text-align:center">
+    <h2 style="margin-bottom:0.75rem">ברוך הבא ל-CalTrack 🎉</h2>
+    <p style="color:var(--text-secondary);margin-bottom:1.5rem">כדי להתחיל, הכנס את שמך:</p>
+    <input id="onboarding-name" class="food-name-input" type="text" placeholder="שמך"
+           style="width:100%;margin-bottom:1rem;text-align:center"
+           onkeydown="if(event.key==='Enter')submitOnboarding()" autofocus />
+    <button class="weight-save-btn" onclick="submitOnboarding()" style="width:100%;padding:12px">התחל ←</button>
   </div>
 </div>
 
