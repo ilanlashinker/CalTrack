@@ -552,6 +552,7 @@ body {
 
 .main-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 1.5rem;
 }
@@ -602,6 +603,23 @@ body {
 }
 
 .export-btn:active { transform: scale(0.97); }
+
+@media (max-width: 480px) {
+  .main-nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .main-nav-btn,
+  .export-btn,
+  .backup-btn {
+    margin: 0;
+    padding: 10px 6px;
+    font-size: 13px;
+    text-align: center;
+    white-space: normal;
+  }
+}
 
 /* ===== Weight Tracker ===== */
 
@@ -963,7 +981,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 16px;
   font-family: 'Heebo', sans-serif;
   transition: border-color 0.15s;
 }
@@ -975,7 +993,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 16px;
   font-family: 'Heebo', sans-serif;
   text-align: center;
   transition: border-color 0.15s;
@@ -1155,7 +1173,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 16px;
   font-family: 'Heebo', sans-serif;
   cursor: pointer;
   transition: border-color 0.15s;
@@ -1620,4 +1638,37 @@ body {
   color: var(--text-muted);
   font-style: italic;
   line-height: 1.4;
+}
+
+/* ===== Responsive — 600px (all views) ===== */
+
+@media (max-width: 600px) {
+
+  /* deficit-view */
+  .deficit-day-top {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .deficit-numbers {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .deficit-cumulative-val {
+    font-size: 22px;
+  }
+
+  /* balance-view */
+  .balance-stats {
+    justify-content: center;
+  }
+
+  /* activity-view */
+  .act-entry {
+    flex-wrap: wrap;
+  }
+
+  /* day-modal */
+  .day-modal-box {
+    padding: 14px;
+  }
 }
