@@ -1606,7 +1606,7 @@ function applySettings() {
   const s = loadSettings();
   DAILY_GOAL = s.dailyGoal || 1800;
   const titleEl = document.getElementById('main-title');
-  if (titleEl) titleEl.textContent = `🥗 תפריט שבועי — ירידה במשקל של ${s.userName || 'אילן'}`;
+  if (titleEl) titleEl.innerHTML = `<img src="new.png" alt="" style="height:1.2em;vertical-align:middle;border-radius:6px;"> תפריט שבועי — ירידה במשקל של ${s.userName || 'אילן'}`;
   updateLegend();
 }
 
