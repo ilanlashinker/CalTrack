@@ -1918,7 +1918,9 @@ function submitOnboarding() {
 }
 
 if (localStorage.getItem(SETTINGS_KEY) === null) {
-  document.getElementById('onboarding-overlay').style.display = 'flex';
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('onboarding-overlay').style.display = 'flex';
+  });
 } else {
   applySettings();
   buildDays();
