@@ -25,7 +25,7 @@
     <button class="main-nav-btn active" onclick="switchView('menu')">🗓️ תפריט שבועי</button>
     <button class="main-nav-btn" onclick="switchView('weight')">⚖️ מעקב משקל</button>
     <button class="main-nav-btn" onclick="switchView('activity')">🏃 פעילות</button>
-    <button class="main-nav-btn" onclick="switchView('deficit')">📉 גרעון</button>
+    <button class="main-nav-btn" id="nav-deficit-btn" onclick="switchView('deficit')">📉 גרעון</button>
     <button class="main-nav-btn" onclick="switchView('balance')">🔥 מאזן</button>
     <button class="main-nav-btn" onclick="switchView('settings')">⚙️ הגדרות</button>
     <button class="export-btn" onclick="exportToExcel()">📊 ייצוא Excel</button>
@@ -67,7 +67,7 @@
   <div id="deficit-view" style="display:none">
 
     <div id="deficit-tdee-bar" class="deficit-tdee-bar"></div>
-    <div class="balance-disclaimer">
+    <div class="balance-disclaimer" id="deficit-disclaimer">
       ⚠️ TDEE מחושב לפי נוסחת Mifflin-St Jeor עם המשקל האחרון שנמדד — הערכה בדיוק של ±10%.
       הגרעון מוצג לצורך מידע בלבד.
     </div>
@@ -118,6 +118,15 @@
         <button onclick="saveSettingField('dailyGoal')" class="weight-save-btn">שמור</button>
       </div>
       <div id="set-msg-goal" class="weight-msg"></div>
+    </div>
+
+    <div class="weight-input-card">
+      <div class="weight-input-label">🎯 מצב יעד</div>
+      <div class="weight-input-row" style="gap:8px">
+        <button id="goal-mode-cut"  class="weight-save-btn" onclick="setGoalMode('cut')">חיטוב 🔥</button>
+        <button id="goal-mode-bulk" class="weight-save-btn" onclick="setGoalMode('bulk')">מסה 💪</button>
+      </div>
+      <div id="set-msg-goalmode" class="weight-msg"></div>
     </div>
 
     <div class="weight-input-card">
@@ -301,6 +310,7 @@ function dateStrToTabIdx(dateStr) {
 
 const FOOD_KEY = 'foodTrackerV2';
 let DAILY_GOAL = 1800;
+let GOAL_MODE  = 'cut';
 const MEAL_KEYS = ['breakfast', 'lunch', 'dinner', 'snack'];
 const MEAL_LABELS = {
   breakfast: '☀️ ארוחת בוקר',
@@ -388,13 +398,19 @@ function renderDayContent(tabIdx, data) {
   const total    = getDayTotal(dayData);
   const remaining = DAILY_GOAL - total;
   const pct      = Math.min(100, Math.round((total / DAILY_GOAL) * 100));
-  const barColor = pct >= 100 ? '#e05757' : pct >= 85 ? '#EF9F27' : '#1d9e75';
   const isOver   = total > DAILY_GOAL;
+  const barColor = GOAL_MODE === 'bulk'
+    ? (pct >= 100 ? '#1d9e75' : pct >= 85 ? '#EF9F27' : '#e05757')
+    : (pct >= 100 ? '#e05757' : pct >= 85 ? '#EF9F27' : '#1d9e75');
+  const remainingLbl = GOAL_MODE === 'bulk'
+    ? (isOver ? "✅ יעד הושג!" : "חסרים קל'")
+    : (isOver ? "חריגה בקל'" : "נותרו קל'");
+  const overCls = (GOAL_MODE === 'cut' && isOver) ? ' over-goal' : '';
 
   let html = `
     <div class="totals-bar">
       <div class="total-item">
-        <span class="total-val${isOver ? ' over-goal' : ''}">${total.toLocaleString()}</span>
+        <span class="total-val${overCls}">${total.toLocaleString()}</span>
         <span class="total-lbl">קלוריות היום</span>
       </div>
       <div class="total-item">
@@ -402,8 +418,8 @@ function renderDayContent(tabIdx, data) {
         <span class="total-lbl">יעד יומי</span>
       </div>
       <div class="total-item">
-        <span class="total-val${isOver ? ' over-goal' : ''}">${isOver ? '+'+Math.abs(remaining) : remaining}</span>
-        <span class="total-lbl">${isOver ? "חריגה בקל'" : "נותרו קל'"}</span>
+        <span class="total-val${overCls}">${isOver ? '+'+Math.abs(remaining) : remaining}</span>
+        <span class="total-lbl">${remainingLbl}</span>
       </div>
     </div>
     <div class="cal-progress-wrap">
@@ -499,7 +515,11 @@ function renderCalendarHtml(year, month, data) {
     const isToday = ds === todayStr;
     const isPast  = ds <= todayStr;
     const hasData = total > 0;
-    const dot     = hasData ? (total > DAILY_GOAL+150 ? '#e05757' : total >= DAILY_GOAL ? '#EF9F27' : '#1d9e75') : '';
+    const dot     = hasData
+      ? GOAL_MODE === 'bulk'
+        ? (total > DAILY_GOAL+150 ? '#1d9e75' : total >= DAILY_GOAL ? '#EF9F27' : '#e05757')
+        : (total > DAILY_GOAL+150 ? '#e05757' : total >= DAILY_GOAL ? '#EF9F27' : '#1d9e75')
+      : '';
     const cls     = ['cal-cell', isToday ? 'cal-today' : '', !isPast ? 'cal-future' : '', isPast && hasData ? 'cal-has-data' : ''].filter(Boolean).join(' ');
     const click   = isPast && hasData ? ` onclick="showDayModal('${ds}')"` : '';
 
@@ -1141,9 +1161,15 @@ function renderWeeklySummary() {
   const avg = Math.round(tracked.reduce((a, b) => a + b, 0) / tracked.length);
   const underGoal = totals.filter(t => t > 0 && t <= DAILY_GOAL).length;
   const overGoal  = totals.filter(t => t > DAILY_GOAL).length;
-  const best  = Math.min(...tracked);
-  const worst = Math.max(...tracked);
-  const avgCls = avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL+150 ? 'amber' : 'red';
+  const isBulk = GOAL_MODE === 'bulk';
+  const best  = isBulk ? Math.max(...tracked) : Math.min(...tracked);
+  const worst = isBulk ? Math.min(...tracked) : Math.max(...tracked);
+  const avgCls = isBulk
+    ? (avg >= DAILY_GOAL ? 'green' : avg >= DAILY_GOAL - 150 ? 'amber' : 'red')
+    : (avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL + 150 ? 'amber' : 'red');
+  const worstCls = isBulk
+    ? (worst < DAILY_GOAL - 150 ? 'red' : worst < DAILY_GOAL ? 'amber' : 'green')
+    : (worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green');
 
   container.innerHTML = `<div class="weekly-summary-card">
     <div class="weekly-summary-title">סיכום שבועי</div>
@@ -1155,6 +1181,15 @@ function renderWeeklySummary() {
       <span class="weekly-stat-label">ממוצע יומי</span>
       <span class="weekly-stat-val ${avgCls}">${avg.toLocaleString()} קל'</span>
     </div>
+    ${isBulk ? `
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">מעל יעד</span>
+      <span class="weekly-stat-val green">${overGoal} ימים</span>
+    </div>
+    ${underGoal > 0 ? `<div class="weekly-stat-row">
+      <span class="weekly-stat-label">מתחת ליעד</span>
+      <span class="weekly-stat-val red">${underGoal} ימים</span>
+    </div>` : ''}` : `
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">מתחת ליעד</span>
       <span class="weekly-stat-val green">${underGoal} ימים</span>
@@ -1162,14 +1197,14 @@ function renderWeeklySummary() {
     ${overGoal > 0 ? `<div class="weekly-stat-row">
       <span class="weekly-stat-label">מעל יעד</span>
       <span class="weekly-stat-val red">${overGoal} ימים</span>
-    </div>` : ''}
+    </div>` : ''}`}
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">יום הכי טוב</span>
       <span class="weekly-stat-val green">${best.toLocaleString()} קל'</span>
     </div>
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">יום הכי גרוע</span>
-      <span class="weekly-stat-val ${worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green'}">${worst.toLocaleString()} קל'</span>
+      <span class="weekly-stat-val ${worstCls}">${worst.toLocaleString()} קל'</span>
     </div>
   </div>`;
 }
@@ -1205,9 +1240,15 @@ function renderMonthlySummary() {
   const avg = Math.round(tracked.reduce((a, b) => a + b, 0) / tracked.length);
   const underGoal = totals.filter(t => t > 0 && t <= DAILY_GOAL).length;
   const overGoal  = totals.filter(t => t > DAILY_GOAL).length;
-  const best  = Math.min(...tracked);
-  const worst = Math.max(...tracked);
-  const avgCls = avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL+150 ? 'amber' : 'red';
+  const isBulk = GOAL_MODE === 'bulk';
+  const best  = isBulk ? Math.max(...tracked) : Math.min(...tracked);
+  const worst = isBulk ? Math.min(...tracked) : Math.max(...tracked);
+  const avgCls = isBulk
+    ? (avg >= DAILY_GOAL ? 'green' : avg >= DAILY_GOAL - 150 ? 'amber' : 'red')
+    : (avg <= DAILY_GOAL ? 'green' : avg <= DAILY_GOAL + 150 ? 'amber' : 'red');
+  const worstCls = isBulk
+    ? (worst < DAILY_GOAL - 150 ? 'red' : worst < DAILY_GOAL ? 'amber' : 'green')
+    : (worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green');
 
   container.innerHTML = `<div class="weekly-summary-card">
     <div class="weekly-summary-title">סיכום חודשי — ${H_MONTHS[month]}</div>
@@ -1219,6 +1260,15 @@ function renderMonthlySummary() {
       <span class="weekly-stat-label">ממוצע יומי</span>
       <span class="weekly-stat-val ${avgCls}">${avg.toLocaleString()} קל'</span>
     </div>
+    ${isBulk ? `
+    <div class="weekly-stat-row">
+      <span class="weekly-stat-label">מעל יעד</span>
+      <span class="weekly-stat-val green">${overGoal} ימים</span>
+    </div>
+    ${underGoal > 0 ? `<div class="weekly-stat-row">
+      <span class="weekly-stat-label">מתחת ליעד</span>
+      <span class="weekly-stat-val red">${underGoal} ימים</span>
+    </div>` : ''}` : `
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">מתחת ליעד</span>
       <span class="weekly-stat-val green">${underGoal} ימים</span>
@@ -1226,14 +1276,14 @@ function renderMonthlySummary() {
     ${overGoal > 0 ? `<div class="weekly-stat-row">
       <span class="weekly-stat-label">מעל יעד</span>
       <span class="weekly-stat-val red">${overGoal} ימים</span>
-    </div>` : ''}
+    </div>` : ''}`}
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">יום הכי טוב</span>
       <span class="weekly-stat-val green">${best.toLocaleString()} קל'</span>
     </div>
     <div class="weekly-stat-row">
       <span class="weekly-stat-label">יום הכי גרוע</span>
-      <span class="weekly-stat-val ${worst > DAILY_GOAL ? 'red' : worst >= DAILY_GOAL ? 'amber' : 'green'}">${worst.toLocaleString()} קל'</span>
+      <span class="weekly-stat-val ${worstCls}">${worst.toLocaleString()} קל'</span>
     </div>
   </div>`;
 }
@@ -1403,6 +1453,7 @@ function renderDeficitPage() {
   </div>`;
 
   // Sort bar
+  const isBulk = GOAL_MODE === 'bulk';
   const sortBar = document.getElementById('deficit-sort-bar');
   if (sortBar) {
     sortBar.style.display = '';
@@ -1410,6 +1461,10 @@ function renderDeficitPage() {
       const btn = document.getElementById(`dsort-${m}`);
       if (btn) btn.classList.toggle('active', m === deficitSortMode);
     });
+    const dDesc = document.getElementById('dsort-deficit-desc');
+    const dAsc  = document.getElementById('dsort-deficit-asc');
+    if (dDesc) dDesc.textContent = isBulk ? 'עודף: גבוה → נמוך' : 'גרעון: גבוה → נמוך';
+    if (dAsc)  dAsc.textContent  = isBulk ? 'עודף: נמוך → גבוה' : 'גרעון: נמוך → גבוה';
   }
 
   // All days with calorie data
@@ -1456,16 +1511,25 @@ function renderDeficitPage() {
   const firstDateObj = new Date(firstDay + 'T00:00:00');
   const firstLabel = `${firstDateObj.getDate()}/${firstDateObj.getMonth()+1}/${firstDateObj.getFullYear()}`;
   const isOverall = totalDeficit >= 0;
+  // In cut: overall deficit (>= 0) = good. In bulk: overall surplus (< 0) = good.
+  const cumulGood = isBulk ? !isOverall : isOverall;
+  const cumulCls  = cumulGood ? 'green' : 'red';
+  const cumulTitle = isBulk
+    ? (!isOverall ? 'עודף מצטבר' : 'גרעון מצטבר')
+    : (isOverall  ? 'גרעון מצטבר' : 'עודף מצטבר');
+  const cumulBodyLbl = isBulk
+    ? (!isOverall ? 'ק"ג מסה תיאורטית שנצברה' : 'ק"ג מסה תיאורטית חסרה')
+    : (isOverall  ? 'ק"ג שומן תיאורטי שנשרף'   : 'ק"ג שומן תיאורטי שנצבר');
   const cumulEl = document.getElementById('deficit-cumulative-card');
   if (cumulEl) cumulEl.innerHTML = `<div class="deficit-cumulative-card">
     <div class="deficit-cumulative-row">
       <div class="deficit-cumulative-stat">
-        <span class="deficit-cumulative-val ${isOverall ? 'green' : 'red'}">${Math.abs(Math.round(totalDeficit)).toLocaleString()}</span>
-        <span class="deficit-cumulative-lbl">קל' ${isOverall ? 'גרעון מצטבר' : 'עודף מצטבר'}</span>
+        <span class="deficit-cumulative-val ${cumulCls}">${Math.abs(Math.round(totalDeficit)).toLocaleString()}</span>
+        <span class="deficit-cumulative-lbl">קל' ${cumulTitle}</span>
       </div>
       <div class="deficit-cumulative-stat">
-        <span class="deficit-cumulative-val ${isOverall ? 'green' : 'red'}">${Math.abs(fatKg).toFixed(2)}</span>
-        <span class="deficit-cumulative-lbl">ק"ג שומן ${isOverall ? 'תיאורטי שנשרף' : 'תיאורטי שנצבר'}</span>
+        <span class="deficit-cumulative-val ${cumulCls}">${Math.abs(fatKg).toFixed(2)}</span>
+        <span class="deficit-cumulative-lbl">${cumulBodyLbl}</span>
       </div>
     </div>
     <div class="deficit-cumulative-meta">מבוסס על ${allDays.length} ימים מתועדים · מ-${firstLabel} עד היום · ימים ללא נתונים לא נכללו</div>
@@ -1485,15 +1549,24 @@ function renderDeficitPage() {
     const dateObj   = new Date(ds + 'T00:00:00');
     const isToday   = ds === dateToStr(new Date());
     const dateLabel = `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()}/${dateObj.getMonth()+1}`;
-    const defCls    = isDeficit ? 'green' : deficit > -150 ? 'amber' : 'red';
+    // cut: deficit>0 = good(green). bulk: surplus (deficit<0) = good(green).
+    const defCls = isBulk
+      ? (!isDeficit ? 'green' : deficit < 150 ? 'amber' : 'red')
+      : (isDeficit  ? 'green' : deficit > -150 ? 'amber' : 'red');
+    const badgeLabel = isBulk
+      ? (!isDeficit ? '▲ עודף' : '▼ גרעון')
+      : (isDeficit  ? '▼ גרעון' : '▲ עודף');
+    const barBg = isBulk
+      ? (!isDeficit ? '#1d9e75' : deficit < 150 ? '#EF9F27' : '#e05757')
+      : (isDeficit  ? '#1d9e75' : deficit > -150 ? '#EF9F27' : '#e05757');
 
     html += `<div class="deficit-day-card">
       <div class="deficit-day-top">
         <span class="balance-day-label">${dateLabel}${isToday ? ' <span class="today-badge">היום</span>' : ''}</span>
-        <span class="deficit-badge ${defCls}">${isDeficit ? '▼ גרעון' : '▲ עודף'} ${Math.abs(deficit).toLocaleString()} קל'</span>
+        <span class="deficit-badge ${defCls}">${badgeLabel} ${Math.abs(deficit).toLocaleString()} קל'</span>
       </div>
       <div class="deficit-bar-wrap">
-        <div class="deficit-bar-fill" style="width:${Math.min(100, Math.round((eaten/adjustedTdee)*100))}%;background:${isDeficit ? '#1d9e75' : deficit > -150 ? '#EF9F27' : '#e05757'}"></div>
+        <div class="deficit-bar-fill" style="width:${Math.min(100, Math.round((eaten/adjustedTdee)*100))}%;background:${barBg}"></div>
       </div>
       <div class="deficit-numbers">
         <span>אכלת <strong>${eaten.toLocaleString()}</strong> קל'</span>
@@ -1580,7 +1653,7 @@ function renderBalancePage() {
 const SETTINGS_KEY = 'settingsV1';
 
 function loadSettings() {
-  const def = { dailyGoal: 1800, userName: 'אילן', startingWeight: null, age: 23, height: 180, gender: 'male', activityLevel: 'moderate' };
+  const def = { dailyGoal: 1800, userName: 'אילן', startingWeight: null, age: 23, height: 180, gender: 'male', activityLevel: 'moderate', goalMode: 'cut' };
   try {
     const r = localStorage.getItem(SETTINGS_KEY);
     return r ? Object.assign({}, def, JSON.parse(r)) : def;
@@ -1597,17 +1670,57 @@ function updateLegend() {
   const lg = document.getElementById('legend-green');
   const la = document.getElementById('legend-amber');
   const lr = document.getElementById('legend-red');
-  if (lg) lg.textContent = `מתחת ל-${f(DAILY_GOAL)}`;
-  if (la) la.textContent = `${f(DAILY_GOAL)}–${f(upper)}`;
-  if (lr) lr.textContent = `מעל ${f(upper)}`;
+  if (GOAL_MODE === 'bulk') {
+    if (lg) lg.textContent = `מעל ${f(upper)}`;
+    if (la) la.textContent = `${f(DAILY_GOAL)}–${f(upper)}`;
+    if (lr) lr.textContent = `מתחת ל-${f(DAILY_GOAL)}`;
+  } else {
+    if (lg) lg.textContent = `מתחת ל-${f(DAILY_GOAL)}`;
+    if (la) la.textContent = `${f(DAILY_GOAL)}–${f(upper)}`;
+    if (lr) lr.textContent = `מעל ${f(upper)}`;
+  }
 }
 
 function applySettings() {
   const s = loadSettings();
   DAILY_GOAL = s.dailyGoal || 1800;
+  GOAL_MODE  = s.goalMode  || 'cut';
   const titleEl = document.getElementById('main-title');
   if (titleEl) titleEl.innerHTML = `<img src="new.png" alt="" style="height:1.2em;vertical-align:middle;border-radius:6px;"> תפריט שבועי — ירידה במשקל של ${s.userName || 'אילן'}`;
   updateLegend();
+  updateGoalModeButtons();
+  updateDeficitNavLabel();
+}
+
+function updateGoalModeButtons() {
+  const cutBtn  = document.getElementById('goal-mode-cut');
+  const bulkBtn = document.getElementById('goal-mode-bulk');
+  if (!cutBtn || !bulkBtn) return;
+  cutBtn.style.opacity  = GOAL_MODE === 'cut'  ? '1' : '0.35';
+  bulkBtn.style.opacity = GOAL_MODE === 'bulk' ? '1' : '0.35';
+}
+
+function updateDeficitNavLabel() {
+  const navBtn = document.getElementById('nav-deficit-btn');
+  if (navBtn) navBtn.textContent = GOAL_MODE === 'bulk' ? '📈 עודף' : '📉 גרעון';
+  const disc = document.getElementById('deficit-disclaimer');
+  if (disc) disc.innerHTML = `⚠️ TDEE מחושב לפי נוסחת Mifflin-St Jeor עם המשקל האחרון שנמדד — הערכה בדיוק של ±10%.<br>${GOAL_MODE === 'bulk' ? 'העודף מוצג לצורך מידע בלבד.' : 'הגרעון מוצג לצורך מידע בלבד.'}`;
+}
+
+function setGoalMode(mode) {
+  const s = loadSettings();
+  s.goalMode = mode;
+  saveSettings(s);
+  GOAL_MODE = mode;
+  updateGoalModeButtons();
+  updateDeficitNavLabel();
+  updateLegend();
+  buildDays();
+  buildCalendar();
+  renderWeeklySummary();
+  renderMonthlySummary();
+  renderDeficitPage();
+  showSettingsMsg('goalmode', `✓ מצב עודכן ל-${mode === 'cut' ? 'חיטוב 🔥' : 'מסה 💪'}`);
 }
 
 function renderSettingsPage() {
@@ -1619,6 +1732,7 @@ function renderSettingsPage() {
   document.getElementById('set-height').value            = s.height || '';
   document.getElementById('set-gender').value            = s.gender || 'male';
   document.getElementById('set-activity-level').value   = s.activityLevel || 'moderate';
+  updateGoalModeButtons();
 }
 
 function saveSettingField(field) {
