@@ -346,24 +346,28 @@ function escHtml(str) {
 function addFoodItem(dateStr, meal) {
   const nameEl = document.getElementById(`name-${dateStr}-${meal}`);
   const calEl  = document.getElementById(`cal-${dateStr}-${meal}`);
+  const qtyEl  = document.getElementById(`qty-${dateStr}-${meal}`);
   const name = nameEl.value.trim();
-  const cal  = Math.round(parseFloat(calEl.value));
+  const unitCal = Math.round(parseFloat(calEl.value));
+  const qty = clampQty(qtyEl.value);
 
   if (!name) {
     nameEl.classList.add('input-error'); nameEl.focus();
     setTimeout(() => nameEl.classList.remove('input-error'), 1500); return;
   }
-  if (isNaN(cal) || cal < 0 || cal > 9999) {
+  if (isNaN(unitCal) || unitCal < 0 || unitCal > 9999) {
     calEl.classList.add('input-error'); calEl.focus();
     setTimeout(() => calEl.classList.remove('input-error'), 1500); return;
   }
 
+  const cal = unitCal * qty;
+
   const data = loadFoodData();
   if (!data.days[dateStr]) data.days[dateStr] = initEmptyDay();
-  data.days[dateStr][meal].push({ name, cal });
+  data.days[dateStr][meal].push({ name, cal, qty, unitCal });
   saveFoodData(data);
   snapshotDayTdee(dateStr);
-  saveFoodToHistory(name, cal);
+  saveFoodToHistory(name, unitCal);
 
   const tabIdx = dateStrToTabIdx(dateStr);
   if (tabIdx >= 0) renderDayContent(tabIdx, data);
@@ -372,6 +376,18 @@ function addFoodItem(dateStr, meal) {
   renderMonthlySummary();
   const newName = document.getElementById(`name-${dateStr}-${meal}`);
   if (newName) newName.focus();
+}
+
+function clampQty(val) {
+  let q = parseInt(val, 10);
+  if (isNaN(q)) q = 1;
+  return Math.min(10, Math.max(1, q));
+}
+
+function stepQty(dateStr, meal, delta) {
+  const el = document.getElementById(`qty-${dateStr}-${meal}`);
+  if (!el) return;
+  el.value = clampQty((parseInt(el.value, 10) || 1) + delta);
 }
 
 function deleteFoodItem(dateStr, meal, idx) {
@@ -436,8 +452,10 @@ function renderDayContent(tabIdx, data) {
     if (items.length) {
       html += `<div class="food-list">`;
       items.forEach((item, idx) => {
+        const qty   = item.qty || 1;
+        const label = qty > 1 ? `${qty}x ${escHtml(item.name)}` : escHtml(item.name);
         html += `<div class="food-row">
-            <span class="food-name">${escHtml(item.name)}</span>
+            <span class="food-name">${label}</span>
             <span class="badge cal">${item.cal} קל'</span>
             <button class="food-del-btn" onclick="deleteFoodItem('${dateStr}','${mealKey}',${idx})" title="מחק">✕</button>
           </div>`;
@@ -453,8 +471,15 @@ function renderDayContent(tabIdx, data) {
                    oninput="foodNameInput(this)" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
                    onkeydown="foodNameKeydown(this,event);if(event.key==='Enter'&&!event.defaultPrevented)document.getElementById('cal-${dateStr}-${mealKey}').focus()">
             <input type="number" class="food-cal-input" id="cal-${dateStr}-${mealKey}"
-                   placeholder="קל'" min="0" max="9999" step="1"
-                   onkeydown="if(event.key==='Enter')addFoodItem('${dateStr}','${mealKey}')">
+                   placeholder="קל' ליח'" min="0" max="9999" step="1"
+                   onkeydown="if(event.key==='Enter')document.getElementById('qty-${dateStr}-${mealKey}').focus()">
+            <div class="qty-stepper" title="כמות">
+              <button type="button" class="qty-btn" onclick="stepQty('${dateStr}','${mealKey}',-1)">−</button>
+              <input type="number" class="qty-value" id="qty-${dateStr}-${mealKey}"
+                     min="1" max="10" step="1" value="1"
+                     onkeydown="if(event.key==='Enter')addFoodItem('${dateStr}','${mealKey}')">
+              <button type="button" class="qty-btn" onclick="stepQty('${dateStr}','${mealKey}',1)">+</button>
+            </div>
             <button class="food-add-btn" onclick="addFoodItem('${dateStr}','${mealKey}')">הוסף</button>
           </div>
         </div>
@@ -554,8 +579,10 @@ function showDayModal(dateStr) {
       body += `<div class="modal-meal-section">
         <div class="modal-meal-label">${MEAL_LABELS[mk]}&nbsp;<span class="meal-cal-tag">${mt} קל'</span></div>`;
       items.forEach(item => {
+        const qty   = item.qty || 1;
+        const label = qty > 1 ? `${qty}x ${escHtml(item.name)}` : escHtml(item.name);
         body += `<div class="modal-food-row">
-          <span class="food-name">${escHtml(item.name)}</span>
+          <span class="food-name">${label}</span>
           <span class="badge cal">${item.cal} קל'</span>
         </div>`;
       });
@@ -908,7 +935,7 @@ function exportToExcel() {
 
   // ── גיליון 1: פירוט ──
   const detail = [
-    tr([td('תאריך'), td('יום'), td('ארוחה'), td('שם המאכל'), td("קל'")])
+    tr([td('תאריך'), td('יום'), td('ארוחה'), td('שם המאכל'), td('כמות'), td("קל' ליח'"), td("סה\"כ קל'")])
   ];
 
   sortedDates.forEach(ds => {
@@ -918,11 +945,15 @@ function exportToExcel() {
 
     MEAL_KEYS.forEach(mk => {
       (dayData[mk] || []).forEach((item, i) => {
+        const qty     = item.qty || 1;
+        const unitCal = item.unitCal != null ? item.unitCal : item.cal;
         detail.push(tr([
           td(first && i === 0 ? ds                       : ''),
           td(first && i === 0 ? H_DAYS[dateObj.getDay()] : ''),
           td(i === 0          ? MEAL_LABELS[mk]           : ''),
           td(item.name),
+          td(qty, 'Number'),
+          td(unitCal, 'Number'),
           td(item.cal, 'Number')
         ]));
         if (i === 0) first = false;

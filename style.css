@@ -1028,6 +1028,59 @@ body {
 .food-add-btn:hover { opacity: 0.85; }
 .food-add-btn:active { transform: scale(0.96); }
 
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.qty-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s, transform 0.1s;
+  font-family: 'Heebo', sans-serif;
+}
+
+.qty-btn:hover { background: rgba(255,255,255,0.08); }
+.qty-btn:active { transform: scale(0.9); }
+
+.qty-value {
+  width: 30px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Heebo', sans-serif;
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.qty-value:focus { outline: none; }
+
+.qty-value::-webkit-inner-spin-button,
+.qty-value::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 @keyframes shake {
   0%,100% { transform: translateX(0); }
   25%      { transform: translateX(-4px); }
@@ -1038,6 +1091,8 @@ body {
   .food-add-row { gap: 6px; }
   .food-name-input { min-width: 0; }
   .food-cal-input { width: 60px; }
+  .qty-btn { width: 22px; height: 22px; font-size: 13px; }
+  .qty-value { width: 24px; font-size: 13px; }
 }
 
 /* ===== Autocomplete ===== */
