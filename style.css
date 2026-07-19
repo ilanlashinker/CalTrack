@@ -363,12 +363,12 @@ body {
   cursor: default;
 }
 
-.cal-has-data {
+.cal-clickable {
   cursor: pointer;
   transition: background 0.12s;
 }
 
-.cal-has-data:hover { background: var(--surface-2); }
+.cal-clickable:hover { background: var(--surface-2); }
 
 .cal-empty { pointer-events: none; }
 
@@ -489,42 +489,45 @@ body {
 
 .modal-close:hover { color: var(--text-primary); background: var(--surface-2); }
 
-.modal-total {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--green-dark);
-  margin-bottom: 16px;
-}
-
-.modal-total.over-goal { color: #e05757; }
-.modal-total.on-goal   { color: #EF9F27; }
-
-.modal-meal-section { margin-bottom: 14px; }
-
-.modal-meal-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.modal-food-row {
+.day-modal-nav {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  background: var(--surface-2);
-  border-radius: var(--radius-md);
-  margin-bottom: 4px;
+  margin-bottom: 14px;
 }
 
-.modal-empty {
-  text-align: center;
-  color: var(--text-muted);
+.modal-date-input {
+  flex: 1;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
   font-size: 13px;
-  padding: 24px 0;
+  font-family: 'Heebo', sans-serif;
+  color-scheme: dark;
+}
+
+.food-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: var(--radius-md);
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.food-edit-btn:hover {
+  color: var(--green-mid);
+  background: rgba(29,158,117,0.1);
+}
+
+.food-row-editing {
+  flex-wrap: wrap;
+  background: var(--surface-2);
 }
 
 /* ===== Responsive ===== */

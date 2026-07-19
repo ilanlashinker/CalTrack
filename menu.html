@@ -343,10 +343,17 @@ function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function addFoodItem(dateStr, meal) {
-  const nameEl = document.getElementById(`name-${dateStr}-${meal}`);
-  const calEl  = document.getElementById(`cal-${dateStr}-${meal}`);
-  const qtyEl  = document.getElementById(`qty-${dateStr}-${meal}`);
+// ctx ('tab' | 'modal') disambiguates which rendered copy of this date's
+// inputs to read/write — buildDays() renders all 7 week-tab day-cards into
+// the DOM at once (hidden via CSS for inactive tabs), so a date currently
+// visible in the week tabs and open in the editor modal at the same time
+// exists twice in the DOM. Without ctx in the element IDs,
+// document.getElementById would silently resolve to the first (possibly
+// hidden) match instead of the one the user is actually interacting with.
+function addFoodItem(ctx, dateStr, meal) {
+  const nameEl = document.getElementById(`name-${ctx}-${dateStr}-${meal}`);
+  const calEl  = document.getElementById(`cal-${ctx}-${dateStr}-${meal}`);
+  const qtyEl  = document.getElementById(`qty-${ctx}-${dateStr}-${meal}`);
   const name = nameEl.value.trim();
   const unitCal = Math.round(parseFloat(calEl.value));
   const qty = clampQty(qtyEl.value);
@@ -366,15 +373,10 @@ function addFoodItem(dateStr, meal) {
   if (!data.days[dateStr]) data.days[dateStr] = initEmptyDay();
   data.days[dateStr][meal].push({ name, cal, qty, unitCal });
   saveFoodData(data);
-  snapshotDayTdee(dateStr);
   saveFoodToHistory(name, unitCal);
+  commitFoodChange(dateStr);
 
-  const tabIdx = dateStrToTabIdx(dateStr);
-  if (tabIdx >= 0) renderDayContent(tabIdx, data);
-  buildCalendar();
-  renderWeeklySummary();
-  renderMonthlySummary();
-  const newName = document.getElementById(`name-${dateStr}-${meal}`);
+  const newName = document.getElementById(`name-${ctx}-${dateStr}-${meal}`);
   if (newName) newName.focus();
 }
 
@@ -384,8 +386,8 @@ function clampQty(val) {
   return Math.min(10, Math.max(1, q));
 }
 
-function stepQty(dateStr, meal, delta) {
-  const el = document.getElementById(`qty-${dateStr}-${meal}`);
+function stepQty(ctx, dateStr, meal, delta) {
+  const el = document.getElementById(`qty-${ctx}-${dateStr}-${meal}`);
   if (!el) return;
   el.value = clampQty((parseInt(el.value, 10) || 1) + delta);
 }
@@ -395,27 +397,160 @@ function deleteFoodItem(dateStr, meal, idx) {
   if (data.days[dateStr] && data.days[dateStr][meal]) {
     data.days[dateStr][meal].splice(idx, 1);
     saveFoodData(data);
-    snapshotDayTdee(dateStr);
-    const tabIdx = dateStrToTabIdx(dateStr);
-    if (tabIdx >= 0) renderDayContent(tabIdx, data);
-    buildCalendar();
-    renderWeeklySummary();
-  renderMonthlySummary();
+    commitFoodChange(dateStr);
   }
 }
 
-function renderDayContent(tabIdx, data) {
-  const card = document.getElementById(`day-card-${tabIdx}`);
-  if (!card) return;
-  if (!data) data = loadFoodData();
+function editFoodItem(dateStr, meal, idx, { name, unitCal, qty }) {
+  const data = loadFoodData();
+  const items = data.days[dateStr] && data.days[dateStr][meal];
+  if (!items || !items[idx]) return;
+  items[idx] = { name, cal: unitCal * qty, qty, unitCal };
+  saveFoodData(data);
+  saveFoodToHistory(name, unitCal);
+  commitFoodChange(dateStr);
+}
 
-  const dateStr  = tabIndexToDate(tabIdx);
-  const dayData  = data.days[dateStr] || initEmptyDay();
-  const total    = getDayTotal(dayData);
+// Re-renders whichever live view(s) currently show this date — the current
+// week's day-card and/or the open editor modal — without touching storage.
+let modalOpenDate = null;
+
+function rerenderDate(dateStr) {
+  const data = loadFoodData();
+  const tabIdx = dateStrToTabIdx(dateStr);
+  if (tabIdx >= 0) renderDayContent(tabIdx, data);
+  if (modalOpenDate === dateStr) renderDayModalBody(dateStr, data);
+}
+
+// Shared commit path for add/edit/delete on any date (today, past, or the
+// open editor modal): re-snapshots that day's TDEE, cascades the recompute to
+// every later day whose snapshot depends on it, then re-renders every live
+// view that could be affected.
+function commitFoodChange(dateStr) {
+  snapshotDayTdee(dateStr);
+  resnapshotFrom(dateStr);
+  rerenderDate(dateStr);
+  buildCalendar();
+  renderWeeklySummary();
+  renderMonthlySummary();
+}
+
+function startEditFoodItem(ctx, dateStr, meal, idx) {
+  editingEntry = { ctx, dateStr, meal, idx };
+  rerenderDate(dateStr);
+}
+
+function cancelEditFoodItem() {
+  const prev = editingEntry;
+  editingEntry = null;
+  if (prev) rerenderDate(prev.dateStr);
+}
+
+function stepEditQty(ctx, dateStr, meal, idx, delta) {
+  const el = document.getElementById(`editqty-${ctx}-${dateStr}-${meal}-${idx}`);
+  if (!el) return;
+  el.value = clampQty((parseInt(el.value, 10) || 1) + delta);
+}
+
+function saveEditFoodItem(ctx, dateStr, meal, idx) {
+  const nameEl = document.getElementById(`editname-${ctx}-${dateStr}-${meal}-${idx}`);
+  const calEl  = document.getElementById(`editcal-${ctx}-${dateStr}-${meal}-${idx}`);
+  const qtyEl  = document.getElementById(`editqty-${ctx}-${dateStr}-${meal}-${idx}`);
+  const name = nameEl.value.trim();
+  const unitCal = Math.round(parseFloat(calEl.value));
+  const qty = clampQty(qtyEl.value);
+
+  if (!name) {
+    nameEl.classList.add('input-error'); nameEl.focus();
+    setTimeout(() => nameEl.classList.remove('input-error'), 1500); return;
+  }
+  if (isNaN(unitCal) || unitCal < 0 || unitCal > 9999) {
+    calEl.classList.add('input-error'); calEl.focus();
+    setTimeout(() => calEl.classList.remove('input-error'), 1500); return;
+  }
+
+  editingEntry = null;
+  editFoodItem(dateStr, meal, idx, { name, unitCal, qty });
+}
+
+// Which single food-row (if any) is currently showing its inline edit form.
+// ctx distinguishes the week-tab copy from the editor-modal copy of the same
+// date, so opening the edit form in one doesn't also flip the other into
+// edit mode in the background.
+let editingEntry = null; // { ctx, dateStr, meal, idx }
+
+function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
+  const mealTotal = items.reduce((s, it) => s + it.cal, 0);
+  let html = `
+    <div class="meal-section">
+      <div class="meal-label">${MEAL_LABELS[mealKey]}${mealTotal > 0 ? `&nbsp;<span class="meal-cal-tag">${mealTotal} קל'</span>` : ''}</div>
+      <div class="meal-card">`;
+  if (items.length) {
+    html += `<div class="food-list">`;
+    items.forEach((item, idx) => {
+      const isEditing = editingEntry && editingEntry.ctx === ctx && editingEntry.dateStr === dateStr &&
+        editingEntry.meal === mealKey && editingEntry.idx === idx;
+      if (isEditing) {
+        const unitCal = item.unitCal != null ? item.unitCal : item.cal;
+        html += `<div class="food-row food-row-editing">
+            <input type="text" class="food-name-input" id="editname-${ctx}-${dateStr}-${mealKey}-${idx}"
+                   maxlength="60" value="${escHtml(item.name)}">
+            <input type="number" class="food-cal-input" id="editcal-${ctx}-${dateStr}-${mealKey}-${idx}"
+                   placeholder="קל' ליח'" min="0" max="9999" step="1" value="${unitCal}">
+            <div class="qty-stepper" title="כמות">
+              <button type="button" class="qty-btn" onclick="stepEditQty('${ctx}','${dateStr}','${mealKey}',${idx},-1)">−</button>
+              <input type="number" class="qty-value" id="editqty-${ctx}-${dateStr}-${mealKey}-${idx}"
+                     min="1" max="10" step="1" value="${item.qty || 1}">
+              <button type="button" class="qty-btn" onclick="stepEditQty('${ctx}','${dateStr}','${mealKey}',${idx},1)">+</button>
+            </div>
+            <button class="food-add-btn" onclick="saveEditFoodItem('${ctx}','${dateStr}','${mealKey}',${idx})">שמור</button>
+            <button class="food-del-btn" onclick="cancelEditFoodItem()" title="ביטול">✕</button>
+          </div>`;
+      } else {
+        const qty   = item.qty || 1;
+        const label = qty > 1 ? `${qty}x ${escHtml(item.name)}` : escHtml(item.name);
+        html += `<div class="food-row">
+            <span class="food-name">${label}</span>
+            <span class="badge cal">${item.cal} קל'</span>
+            <button class="food-edit-btn" onclick="startEditFoodItem('${ctx}','${dateStr}','${mealKey}',${idx})" title="ערוך">✎</button>
+            <button class="food-del-btn" onclick="deleteFoodItem('${dateStr}','${mealKey}',${idx})" title="מחק">✕</button>
+          </div>`;
+      }
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="food-empty">עדיין לא הוספת מאכלים לארוחה זו</div>`;
+  }
+  html += `
+        <div class="food-add-row">
+          <input type="text" class="food-name-input" id="name-${ctx}-${dateStr}-${mealKey}"
+                 placeholder="שם המאכל" maxlength="60"
+                 oninput="foodNameInput(this)" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
+                 onkeydown="foodNameKeydown(this,event);if(event.key==='Enter'&&!event.defaultPrevented)document.getElementById('cal-${ctx}-${dateStr}-${mealKey}').focus()">
+          <input type="number" class="food-cal-input" id="cal-${ctx}-${dateStr}-${mealKey}"
+                 placeholder="קל' ליח'" min="0" max="9999" step="1"
+                 onkeydown="if(event.key==='Enter')document.getElementById('qty-${ctx}-${dateStr}-${mealKey}').focus()">
+          <div class="qty-stepper" title="כמות">
+            <button type="button" class="qty-btn" onclick="stepQty('${ctx}','${dateStr}','${mealKey}',-1)">−</button>
+            <input type="number" class="qty-value" id="qty-${ctx}-${dateStr}-${mealKey}"
+                   min="1" max="10" step="1" value="1"
+                   onkeydown="if(event.key==='Enter')addFoodItem('${ctx}','${dateStr}','${mealKey}')">
+            <button type="button" class="qty-btn" onclick="stepQty('${ctx}','${dateStr}','${mealKey}',1)">+</button>
+          </div>
+          <button class="food-add-btn" onclick="addFoodItem('${ctx}','${dateStr}','${mealKey}')">הוסף</button>
+        </div>
+      </div>
+    </div>`;
+  return html;
+}
+
+function renderDayBodyHtml(ctx, dateStr, data) {
+  const dayData   = data.days[dateStr] || initEmptyDay();
+  const total     = getDayTotal(dayData);
   const remaining = DAILY_GOAL - total;
-  const pct      = Math.min(100, Math.round((total / DAILY_GOAL) * 100));
-  const isOver   = total > DAILY_GOAL;
-  const barColor = GOAL_MODE === 'bulk'
+  const pct       = Math.min(100, Math.round((total / DAILY_GOAL) * 100));
+  const isOver    = total > DAILY_GOAL;
+  const barColor  = GOAL_MODE === 'bulk'
     ? (pct >= 100 ? '#1d9e75' : pct >= 85 ? '#EF9F27' : '#e05757')
     : (pct >= 100 ? '#e05757' : pct >= 85 ? '#EF9F27' : '#1d9e75');
   const remainingLbl = GOAL_MODE === 'bulk'
@@ -427,7 +562,7 @@ function renderDayContent(tabIdx, data) {
     <div class="totals-bar">
       <div class="total-item">
         <span class="total-val${overCls}">${total.toLocaleString()}</span>
-        <span class="total-lbl">קלוריות היום</span>
+        <span class="total-lbl">סה"כ קלוריות</span>
       </div>
       <div class="total-item">
         <span class="total-val">${DAILY_GOAL.toLocaleString()}</span>
@@ -443,50 +578,17 @@ function renderDayContent(tabIdx, data) {
     </div>`;
 
   MEAL_KEYS.forEach(mealKey => {
-    const items     = dayData[mealKey] || [];
-    const mealTotal = items.reduce((s, it) => s + it.cal, 0);
-    html += `
-      <div class="meal-section">
-        <div class="meal-label">${MEAL_LABELS[mealKey]}${mealTotal > 0 ? `&nbsp;<span class="meal-cal-tag">${mealTotal} קל'</span>` : ''}</div>
-        <div class="meal-card">`;
-    if (items.length) {
-      html += `<div class="food-list">`;
-      items.forEach((item, idx) => {
-        const qty   = item.qty || 1;
-        const label = qty > 1 ? `${qty}x ${escHtml(item.name)}` : escHtml(item.name);
-        html += `<div class="food-row">
-            <span class="food-name">${label}</span>
-            <span class="badge cal">${item.cal} קל'</span>
-            <button class="food-del-btn" onclick="deleteFoodItem('${dateStr}','${mealKey}',${idx})" title="מחק">✕</button>
-          </div>`;
-      });
-      html += `</div>`;
-    } else {
-      html += `<div class="food-empty">עדיין לא הוספת מאכלים לארוחה זו</div>`;
-    }
-    html += `
-          <div class="food-add-row">
-            <input type="text" class="food-name-input" id="name-${dateStr}-${mealKey}"
-                   placeholder="שם המאכל" maxlength="60"
-                   oninput="foodNameInput(this)" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
-                   onkeydown="foodNameKeydown(this,event);if(event.key==='Enter'&&!event.defaultPrevented)document.getElementById('cal-${dateStr}-${mealKey}').focus()">
-            <input type="number" class="food-cal-input" id="cal-${dateStr}-${mealKey}"
-                   placeholder="קל' ליח'" min="0" max="9999" step="1"
-                   onkeydown="if(event.key==='Enter')document.getElementById('qty-${dateStr}-${mealKey}').focus()">
-            <div class="qty-stepper" title="כמות">
-              <button type="button" class="qty-btn" onclick="stepQty('${dateStr}','${mealKey}',-1)">−</button>
-              <input type="number" class="qty-value" id="qty-${dateStr}-${mealKey}"
-                     min="1" max="10" step="1" value="1"
-                     onkeydown="if(event.key==='Enter')addFoodItem('${dateStr}','${mealKey}')">
-              <button type="button" class="qty-btn" onclick="stepQty('${dateStr}','${mealKey}',1)">+</button>
-            </div>
-            <button class="food-add-btn" onclick="addFoodItem('${dateStr}','${mealKey}')">הוסף</button>
-          </div>
-        </div>
-      </div>`;
+    html += renderMealSectionHtml(ctx, dateStr, mealKey, dayData[mealKey] || []);
   });
 
-  card.innerHTML = html;
+  return html;
+}
+
+function renderDayContent(tabIdx, data) {
+  const card = document.getElementById(`day-card-${tabIdx}`);
+  if (!card) return;
+  if (!data) data = loadFoodData();
+  card.innerHTML = renderDayBodyHtml('tab', tabIndexToDate(tabIdx), data);
 }
 
 // ===== Calendar =====
@@ -545,8 +647,8 @@ function renderCalendarHtml(year, month, data) {
         ? (total > DAILY_GOAL+150 ? '#1d9e75' : total >= DAILY_GOAL ? '#EF9F27' : '#e05757')
         : (total > DAILY_GOAL+150 ? '#e05757' : total >= DAILY_GOAL ? '#EF9F27' : '#1d9e75')
       : '';
-    const cls     = ['cal-cell', isToday ? 'cal-today' : '', !isPast ? 'cal-future' : '', isPast && hasData ? 'cal-has-data' : ''].filter(Boolean).join(' ');
-    const click   = isPast && hasData ? ` onclick="showDayModal('${ds}')"` : '';
+    const cls     = ['cal-cell', isToday ? 'cal-today' : '', !isPast ? 'cal-future' : '', isPast ? 'cal-clickable' : ''].filter(Boolean).join(' ');
+    const click   = isPast ? ` onclick="openDayEditor('${ds}')"` : '';
 
     html += `<div class="${cls}"${click}>
       <span class="cal-day-num">${d}</span>
@@ -557,45 +659,55 @@ function renderCalendarHtml(year, month, data) {
   return html + '</div>';
 }
 
-function showDayModal(dateStr) {
-  const data    = loadFoodData();
-  const dayData = data.days[dateStr];
-  const dateObj = new Date(dateStr + 'T00:00:00');
-  const total   = getDayTotal(dayData);
+// Editable day editor — opened from the calendar for today or any past day.
+// Reuses the same renderDayBodyHtml/add/edit/delete pipeline as the current
+// week's tabs, so both surfaces stay in sync automatically (see commitFoodChange).
+
+function openDayEditor(dateStr) {
+  const todayStr = dateToStr(new Date());
+  if (dateStr > todayStr) dateStr = todayStr;
+  modalOpenDate = dateStr;
+  editingEntry = null;
+  renderDayModalBody(dateStr);
+  document.getElementById('day-modal').style.display = '';
+}
+
+function renderDayModalBody(dateStr, data) {
+  if (!data) data = loadFoodData();
+  const todayStr = dateToStr(new Date());
+  const dateObj  = new Date(dateStr + 'T00:00:00');
 
   document.getElementById('modal-date-title').textContent =
     `${H_DAYS[dateObj.getDay()]} ${dateObj.getDate()} ${H_MONTHS[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
 
-  let body = '';
-  if (!dayData || total === 0) {
-    body = '<div class="modal-empty">לא נרשמו ארוחות ביום זה</div>';
-  } else {
-    const tcls = total > DAILY_GOAL+150 ? 'over-goal' : total >= DAILY_GOAL ? 'on-goal' : '';
-    body += `<div class="modal-total ${tcls}">${total.toLocaleString()} קל' ביום</div>`;
-    MEAL_KEYS.forEach(mk => {
-      const items = dayData[mk] || [];
-      if (!items.length) return;
-      const mt = items.reduce((s, it) => s + it.cal, 0);
-      body += `<div class="modal-meal-section">
-        <div class="modal-meal-label">${MEAL_LABELS[mk]}&nbsp;<span class="meal-cal-tag">${mt} קל'</span></div>`;
-      items.forEach(item => {
-        const qty   = item.qty || 1;
-        const label = qty > 1 ? `${qty}x ${escHtml(item.name)}` : escHtml(item.name);
-        body += `<div class="modal-food-row">
-          <span class="food-name">${label}</span>
-          <span class="badge cal">${item.cal} קל'</span>
-        </div>`;
-      });
-      body += '</div>';
-    });
-  }
+  const nextDs  = dateToStr(new Date(dateObj.getTime() + 86400000));
+  const nextBtn = document.getElementById('modal-next-day');
+  if (nextBtn) nextBtn.classList.toggle('cal-nav-disabled', nextDs > todayStr);
 
-  document.getElementById('modal-body').innerHTML = body;
-  document.getElementById('day-modal').style.display = '';
+  const picker = document.getElementById('modal-date-picker');
+  if (picker) { picker.max = todayStr; picker.value = dateStr; }
+
+  document.getElementById('modal-body').innerHTML = renderDayBodyHtml('modal', dateStr, data);
+}
+
+function modalGoToDate(dateStr) {
+  if (!dateStr) return;
+  const todayStr = dateToStr(new Date());
+  modalOpenDate = dateStr > todayStr ? todayStr : dateStr;
+  editingEntry = null;
+  renderDayModalBody(modalOpenDate);
+}
+
+function modalShiftDay(delta) {
+  const d = new Date(modalOpenDate + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  modalGoToDate(dateToStr(d));
 }
 
 function closeDayModal() {
   document.getElementById('day-modal').style.display = 'none';
+  modalOpenDate = null;
+  editingEntry = null;
 }
 
 // ===== Weight Tracker =====
@@ -1429,15 +1541,41 @@ function getEffectiveTDEE(asOfDate) {
   return null;
 }
 
-// Snapshots the live effective TDEE onto a day's entry so its deficit never
-// shifts again once recorded, even as later weight/food data is added.
+// Snapshots the TDEE as it was knowable ON that day (asOfDate = dateStr) onto
+// the day's entry, so its deficit never shifts again once recorded, even as
+// later weight/food data is added. Using asOfDate (not "live now") matters
+// once past days can be edited — dateStr is no longer always "today".
 function snapshotDayTdee(dateStr) {
-  const eff = getEffectiveTDEE();
-  if (!eff) return;
   const data = loadFoodData();
   if (!data.days[dateStr]) return;
+  if (getDayTotal(data.days[dateStr]) <= 0) {
+    delete data.days[dateStr].savedTdee;
+    saveFoodData(data);
+    return;
+  }
+  const eff = getEffectiveTDEE(dateStr);
+  if (!eff) return;
   data.days[dateStr].savedTdee = eff.tdee;
   saveFoodData(data);
+}
+
+// Cascades a TDEE recompute to every day on/after dateStr that already has a
+// savedTdee snapshot. Editing dateStr's calories changes the weekly averages
+// calcDynamicTDEE's EMA chain uses for all later days, so their previously
+// snapshotted TDEE is stale and must be recomputed the same as-of-that-day way.
+function resnapshotFrom(dateStr) {
+  const data = loadFoodData();
+  let changed = false;
+  Object.keys(data.days)
+    .filter(ds => ds > dateStr && data.days[ds].savedTdee != null)
+    .forEach(ds => {
+      const eff = getEffectiveTDEE(ds);
+      if (eff && eff.tdee !== data.days[ds].savedTdee) {
+        data.days[ds].savedTdee = eff.tdee;
+        changed = true;
+      }
+    });
+  if (changed) saveFoodData(data);
 }
 
 // One-time migration for days logged before snapshotting existed: reconstruct
@@ -2080,6 +2218,11 @@ if (localStorage.getItem(SETTINGS_KEY) === null) {
     <div class="day-modal-header">
       <h3 id="modal-date-title"></h3>
       <button class="modal-close" onclick="closeDayModal()">✕</button>
+    </div>
+    <div class="day-modal-nav">
+      <button class="cal-nav-btn" onclick="modalShiftDay(-1)" title="יום קודם">›</button>
+      <input type="date" id="modal-date-picker" class="modal-date-input" onchange="modalGoToDate(this.value)">
+      <button class="cal-nav-btn" id="modal-next-day" onclick="modalShiftDay(1)" title="יום הבא">‹</button>
     </div>
     <div id="modal-body"></div>
   </div>
