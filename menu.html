@@ -1448,13 +1448,19 @@ const ACTIVITY_MULTIPLIERS = {
   veryActive: 1.9
 };
 
+function calcBMR(weight) {
+  const s = loadSettings();
+  if (!weight || !s.age || !s.height) return null;
+  return s.gender === 'female'
+    ? (10 * weight) + (6.25 * s.height) - (5 * s.age) - 161
+    : (10 * weight) + (6.25 * s.height) - (5 * s.age) + 5;
+}
+
 function calcTDEE(w) {
   const s = loadSettings();
   const weight = w !== undefined ? w : getLatestWeight();
-  if (!weight || !s.age || !s.height) return null;
-  const bmr = s.gender === 'female'
-    ? (10 * weight) + (6.25 * s.height) - (5 * s.age) - 161
-    : (10 * weight) + (6.25 * s.height) - (5 * s.age) + 5;
+  const bmr = calcBMR(weight);
+  if (bmr == null) return null;
   return Math.round(bmr * (ACTIVITY_MULTIPLIERS[s.activityLevel] || 1.55));
 }
 
@@ -1464,6 +1470,52 @@ function getMondayOfWeek(dateStr) {
   const offset = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + offset);
   return d.toISOString().slice(0, 10);
+}
+
+const ANCHOR_WINDOW_DAYS = 60;
+const ANCHOR_TOLERANCE   = 0.25;
+const MIN_ANCHOR_DAYS    = 21;
+
+// A long-window, self-correcting reference TDEE (avg intake adjusted for the
+// weight trend over the window), used to sanity-check individual weeks in
+// calcDynamicTDEE instead of a fixed BMR-based bound. A single week's implied
+// TDEE is noisy enough that even legitimate deficit weeks can read below that
+// week's own BMR (Mifflin-St Jeor has real per-person error margin) — rejecting
+// those on a per-week BMR floor throws out real signal, not just outliers.
+// Bounded by the same asOfDate as the rest of calcDynamicTDEE, so historical
+// snapshots stay reconstructible. Returns null if under MIN_ANCHOR_DAYS of
+// coverage exists yet (too early to trust a long-window average).
+function calcTrailingAnchor(asOfDate) {
+  const foodData   = loadFoodData();
+  const weightData = loadWeightData();
+  const refDate = asOfDate || todayDate();
+  const start = new Date(refDate + 'T00:00:00');
+  start.setDate(start.getDate() - (ANCHOR_WINDOW_DAYS - 1));
+  const startStr = start.toISOString().slice(0, 10);
+
+  let calSum = 0, calDays = 0;
+  Object.keys(foodData.days).forEach(ds => {
+    if (ds < startStr || ds > refDate) return;
+    const total = getDayTotal(foodData.days[ds]);
+    if (total <= 0) return;
+    calSum += total;
+    calDays += 1;
+  });
+  if (calDays < MIN_ANCHOR_DAYS) return null;
+
+  const entriesInWindow = weightData.entries
+    .filter(e => e.date >= startStr && e.date <= refDate)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (entriesInWindow.length < 2) return null;
+
+  const first = entriesInWindow[0];
+  const last  = entriesInWindow[entriesInWindow.length - 1];
+  const spanDays = (new Date(last.date + 'T00:00:00') - new Date(first.date + 'T00:00:00')) / 86400000;
+  if (spanDays < MIN_ANCHOR_DAYS) return null;
+
+  const avgCal  = calSum / calDays;
+  const wChange = last.weight - first.weight;
+  return avgCal - (wChange * 7700 / spanDays);
 }
 
 // asOfDate (optional): bounds the calculation to only data dated on or before
@@ -1503,7 +1555,15 @@ function calcDynamicTDEE(asOfDate) {
 
   if (validWeeks.length < 2) return null;
 
-  const seed = calcTDEE(asOfDate ? getWeightOnDate(asOfDate) : undefined);
+  // Prefer seeding from the trailing anchor (self-derived from actual intake/
+  // weight data) over the activityLevel-based static estimate — the latter
+  // depends on a self-reported multiplier that can be significantly wrong,
+  // and even a few EMA steps don't fully wash out a bad starting point. Only
+  // fall back to the static seed when there isn't enough history yet for a
+  // stable anchor.
+  const anchor = calcTrailingAnchor(asOfDate);
+  const staticSeed = calcTDEE(asOfDate ? getWeightOnDate(asOfDate) : undefined);
+  const seed = anchor != null ? anchor : staticSeed;
   if (!seed) return null;
 
   let ema = seed;
@@ -1524,7 +1584,15 @@ function calcDynamicTDEE(asOfDate) {
     wChange = Math.max(-MAX_W, Math.min(MAX_W, wChange));
 
     const weekTDEE = avgCal - (wChange * 7700 / 7);
-    if (weekTDEE < 1000 || weekTDEE > 5000) continue;
+
+    // With <MIN_ANCHOR_DAYS of history there's no stable anchor yet, so fall
+    // back to a wide absolute sanity range instead of rejecting on BMR alone
+    // (a single week's implied TDEE can legitimately read below that week's
+    // theoretical BMR during a real deficit).
+    const rejected = anchor != null
+      ? Math.abs(weekTDEE - anchor) / anchor > ANCHOR_TOLERANCE
+      : (weekTDEE < 1000 || weekTDEE > 5000);
+    if (rejected) continue;
 
     ema = ALPHA * weekTDEE + (1 - ALPHA) * ema;
     weekCount++;
@@ -1534,9 +1602,14 @@ function calcDynamicTDEE(asOfDate) {
 }
 
 function getEffectiveTDEE(asOfDate) {
+  const weight = asOfDate ? getWeightOnDate(asOfDate) : getLatestWeight();
   const dynamic = calcDynamicTDEE(asOfDate);
-  if (dynamic) return { tdee: dynamic.tdee, source: 'dynamic', weeks: dynamic.weeks };
-  const staticVal = calcTDEE(asOfDate ? getWeightOnDate(asOfDate) : undefined);
+  if (dynamic) {
+    const bmr = calcBMR(weight);
+    const tdee = bmr != null ? Math.max(dynamic.tdee, Math.round(bmr)) : dynamic.tdee;
+    return { tdee, source: 'dynamic', weeks: dynamic.weeks };
+  }
+  const staticVal = calcTDEE(weight);
   if (staticVal) return { tdee: staticVal, source: 'static' };
   return null;
 }
