@@ -1473,8 +1473,23 @@ function getMondayOfWeek(dateStr) {
 }
 
 const ANCHOR_WINDOW_DAYS = 60;
-const ANCHOR_TOLERANCE   = 0.25;
+const ANCHOR_MAX_DEV     = 0.45;
 const MIN_ANCHOR_DAYS    = 21;
+
+// 7-day trailing moving average of weight ending at dateStr, over whatever
+// weight entries exist in that span (weight isn't logged every day). Used to
+// smooth the anchor's window endpoints so a single noisy reading rolling in or
+// out of the 60-day window can't swing the whole anchor. Draws from all
+// entries (not just in-window ones) so the average stays stable across the
+// window's trailing edge. Returns null only if no entries exist in the span.
+function smoothedWeightAt(entries, dateStr) {
+  const s = new Date(dateStr + 'T00:00:00');
+  s.setDate(s.getDate() - 6);
+  const startStr = s.toISOString().slice(0, 10);
+  const vals = entries.filter(e => e.date >= startStr && e.date <= dateStr).map(e => e.weight);
+  if (!vals.length) return null;
+  return vals.reduce((a, w) => a + w, 0) / vals.length;
+}
 
 // A long-window, self-correcting reference TDEE (avg intake adjusted for the
 // weight trend over the window), used to sanity-check individual weeks in
@@ -1513,8 +1528,13 @@ function calcTrailingAnchor(asOfDate) {
   const spanDays = (new Date(last.date + 'T00:00:00') - new Date(first.date + 'T00:00:00')) / 86400000;
   if (spanDays < MIN_ANCHOR_DAYS) return null;
 
+  // Smooth both endpoints with a 7-day trailing average so a single noisy
+  // reading at either edge (or one rolling out of the window as asOfDate
+  // advances) can't swing the anchor by ~180+ kcal.
+  const firstW = smoothedWeightAt(weightData.entries, first.date);
+  const lastW  = smoothedWeightAt(weightData.entries, last.date);
   const avgCal  = calSum / calDays;
-  const wChange = last.weight - first.weight;
+  const wChange = lastW - firstW;
   return avgCal - (wChange * 7700 / spanDays);
 }
 
@@ -1585,16 +1605,25 @@ function calcDynamicTDEE(asOfDate) {
 
     const weekTDEE = avgCal - (wChange * 7700 / 7);
 
+    // Grade the week's contribution by how far it deviates from the anchor,
+    // rather than a hard include/exclude cutoff — full weight at 0% deviation,
+    // falling off linearly to zero at ANCHOR_MAX_DEV. A hard threshold let a
+    // small anchor shift flip a week fully in/out of the EMA, causing discrete
+    // jumps in the result; a graded weight makes that transition continuous.
     // With <MIN_ANCHOR_DAYS of history there's no stable anchor yet, so fall
-    // back to a wide absolute sanity range instead of rejecting on BMR alone
-    // (a single week's implied TDEE can legitimately read below that week's
-    // theoretical BMR during a real deficit).
-    const rejected = anchor != null
-      ? Math.abs(weekTDEE - anchor) / anchor > ANCHOR_TOLERANCE
-      : (weekTDEE < 1000 || weekTDEE > 5000);
-    if (rejected) continue;
+    // back to a wide absolute sanity range (a single week's implied TDEE can
+    // legitimately read below that week's theoretical BMR during a real deficit).
+    let weight;
+    if (anchor != null) {
+      const dev = Math.abs(weekTDEE - anchor) / anchor;
+      weight = Math.max(0, 1 - dev / ANCHOR_MAX_DEV);
+    } else {
+      weight = (weekTDEE < 1000 || weekTDEE > 5000) ? 0 : 1;
+    }
+    if (weight <= 0) continue;
 
-    ema = ALPHA * weekTDEE + (1 - ALPHA) * ema;
+    const a = ALPHA * weight;
+    ema = a * weekTDEE + (1 - a) * ema;
     weekCount++;
   }
 
