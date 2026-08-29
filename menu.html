@@ -325,6 +325,10 @@ const MEAL_LABELS = {
 const AI_ESTIMATE_URL = 'https://caltrack-estimate.ilan-caltrack.workers.dev';
 const AI_ESTIMATE_TIMEOUT_MS = 15000;
 
+// Shown as a hover tooltip next to every AI button so the accuracy tip is
+// visible right where it's needed, without cluttering the row by default.
+const AI_TIP_HTML = `<span class="ai-tip-icon" tabindex="0">ℹ️<span class="ai-tip-bubble">לדיוק מרבי, תארו את המאכל בפירוט: משקל, שיטת הכנה ותוספות. לדוגמה: "חזה עוף 150 גרם שטוגן בנינג'ה גריל בלי תוספת שמן"</span></span>`;
+
 // AI-estimated macros (grams per unit) staged per food-row after a
 // successful estimate, keyed by row, and consumed the moment that row is
 // actually added/saved. Cleared whenever the food name is edited afterward
@@ -608,6 +612,7 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
             <button type="button" class="food-add-btn ai-btn" title="הערכת קלוריות ומאקרו ע&quot;י AI"
                     id="editai-${ctx}-${dateStr}-${mealKey}-${idx}"
                     onclick="estimateEditCaloriesAI('${ctx}','${dateStr}','${mealKey}',${idx})">✨ AI</button>
+            ${AI_TIP_HTML}
             <div class="qty-stepper" title="כמות">
               <button type="button" class="qty-btn" onclick="stepEditQty('${ctx}','${dateStr}','${mealKey}',${idx},-1)">−</button>
               <input type="number" class="qty-value" id="editqty-${ctx}-${dateStr}-${mealKey}-${idx}"
@@ -644,6 +649,7 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
           <button type="button" class="food-add-btn ai-btn" title="הערכת קלוריות ומאקרו ע&quot;י AI"
                   id="ai-${ctx}-${dateStr}-${mealKey}"
                   onclick="estimateCaloriesAI('${ctx}','${dateStr}','${mealKey}')">✨ AI</button>
+          ${AI_TIP_HTML}
           <div class="qty-stepper" title="כמות">
             <button type="button" class="qty-btn" onclick="stepQty('${ctx}','${dateStr}','${mealKey}',-1)">−</button>
             <input type="number" class="qty-value" id="qty-${ctx}-${dateStr}-${mealKey}"

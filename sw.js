@@ -1,4 +1,4 @@
-const CACHE_NAME = 'caltrack-v7';
+const CACHE_NAME = 'caltrack-v8';
 const ASSETS = [
   './menu.html',
   './style.css',
