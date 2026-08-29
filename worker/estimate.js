@@ -3,7 +3,7 @@
 // deploy` after setting the ALLOWED_ORIGIN var, the GEMINI_API_KEY secret,
 // and binding a KV namespace as RATE_LIMIT (see README.md for exact steps).
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-3.6-flash';
 const GEMINI_TIMEOUT_MS = 10000;
 const RATE_LIMIT_PER_HOUR = 20;
 const MAX_NAME_LEN = 80;
@@ -85,7 +85,11 @@ async function callGemini(env, name) {
     clearTimeout(timer);
   }
 
-  if (!res.ok) throw { code: 'ai_error' };
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('Gemini API error', res.status, errText);
+    throw { code: 'ai_error' };
+  }
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -140,6 +144,7 @@ export default {
       const result = await callGemini(env, name);
       return jsonResponse(result, 200, env);
     } catch (e) {
+      console.error(e);
       const code = e && e.code ? e.code : 'ai_error';
       const status = code === 'timeout' ? 504 : 502;
       return jsonResponse({ error: code }, status, env);
