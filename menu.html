@@ -319,6 +319,24 @@ const MEAL_LABELS = {
   snack:     '🍎 נשנוש'
 };
 
+// Cloudflare Worker endpoint for the optional AI calorie/macro estimate
+// feature (see worker/estimate.js + README.md). Leave the placeholder if
+// the worker isn't deployed — the AI button will simply fail gracefully.
+const AI_ESTIMATE_URL = 'https://caltrack-estimate.ilan-caltrack.workers.dev';
+const AI_ESTIMATE_TIMEOUT_MS = 15000;
+
+// AI-estimated macros (grams per unit) staged per food-row after a
+// successful estimate, keyed by row, and consumed the moment that row is
+// actually added/saved. Cleared whenever the food name is edited afterward
+// so a stale estimate can never attach to a different food.
+const pendingMacros = {};
+function macroKey(ctx, dateStr, meal, idx) {
+  return idx == null ? `${ctx}|${dateStr}|${meal}` : `${ctx}|${dateStr}|${meal}|${idx}`;
+}
+function clearPendingMacros(ctx, dateStr, meal, idx) {
+  delete pendingMacros[macroKey(ctx, dateStr, meal, idx)];
+}
+
 function initEmptyDay() {
   return { breakfast: [], lunch: [], dinner: [], snack: [] };
 }
@@ -337,6 +355,21 @@ function saveFoodData(data) {
 function getDayTotal(dayData) {
   if (!dayData) return 0;
   return MEAL_KEYS.reduce((sum, m) => sum + (dayData[m] || []).reduce((s, it) => s + it.cal, 0), 0);
+}
+
+// Items added manually (without the AI estimate) have no protein/carbs/fat
+// fields — they simply contribute 0, so totals stay accurate for AI-added
+// items without needing a migration or an "incomplete data" indicator.
+function getDayMacros(dayData) {
+  if (!dayData) return { protein: 0, carbs: 0, fat: 0 };
+  return MEAL_KEYS.reduce((tot, m) => {
+    (dayData[m] || []).forEach(it => {
+      tot.protein += it.protein || 0;
+      tot.carbs   += it.carbs   || 0;
+      tot.fat     += it.fat     || 0;
+    });
+    return tot;
+  }, { protein: 0, carbs: 0, fat: 0 });
 }
 
 function escHtml(str) {
@@ -368,10 +401,21 @@ function addFoodItem(ctx, dateStr, meal) {
   }
 
   const cal = unitCal * qty;
+  const item = { name, cal, qty, unitCal };
+  const macros = pendingMacros[macroKey(ctx, dateStr, meal)];
+  if (macros) {
+    item.unitProtein = macros.protein_g;
+    item.unitCarbs   = macros.carbs_g;
+    item.unitFat     = macros.fat_g;
+    item.protein = macros.protein_g * qty;
+    item.carbs   = macros.carbs_g * qty;
+    item.fat     = macros.fat_g * qty;
+    clearPendingMacros(ctx, dateStr, meal);
+  }
 
   const data = loadFoodData();
   if (!data.days[dateStr]) data.days[dateStr] = initEmptyDay();
-  data.days[dateStr][meal].push({ name, cal, qty, unitCal });
+  data.days[dateStr][meal].push(item);
   saveFoodData(data);
   saveFoodToHistory(name, unitCal);
   commitFoodChange(dateStr);
@@ -401,11 +445,22 @@ function deleteFoodItem(dateStr, meal, idx) {
   }
 }
 
-function editFoodItem(dateStr, meal, idx, { name, unitCal, qty }) {
+function editFoodItem(ctx, dateStr, meal, idx, { name, unitCal, qty }) {
   const data = loadFoodData();
   const items = data.days[dateStr] && data.days[dateStr][meal];
   if (!items || !items[idx]) return;
-  items[idx] = { name, cal: unitCal * qty, qty, unitCal };
+  const item = { name, cal: unitCal * qty, qty, unitCal };
+  const macros = pendingMacros[macroKey(ctx, dateStr, meal, idx)];
+  if (macros) {
+    item.unitProtein = macros.protein_g;
+    item.unitCarbs   = macros.carbs_g;
+    item.unitFat     = macros.fat_g;
+    item.protein = macros.protein_g * qty;
+    item.carbs   = macros.carbs_g * qty;
+    item.fat     = macros.fat_g * qty;
+    clearPendingMacros(ctx, dateStr, meal, idx);
+  }
+  items[idx] = item;
   saveFoodData(data);
   saveFoodToHistory(name, unitCal);
   commitFoodChange(dateStr);
@@ -470,7 +525,7 @@ function saveEditFoodItem(ctx, dateStr, meal, idx) {
   }
 
   editingEntry = null;
-  editFoodItem(dateStr, meal, idx, { name, unitCal, qty });
+  editFoodItem(ctx, dateStr, meal, idx, { name, unitCal, qty });
 }
 
 // Which single food-row (if any) is currently showing its inline edit form.
@@ -478,6 +533,58 @@ function saveEditFoodItem(ctx, dateStr, meal, idx) {
 // date, so opening the edit form in one doesn't also flip the other into
 // edit mode in the background.
 let editingEntry = null; // { ctx, dateStr, meal, idx }
+
+// Calls the AI estimate Worker for a single food-row. Shared by the add-row
+// and edit-row buttons; always resolves the button back to its normal state
+// (client-side timeout + try/finally) so it can never stay stuck spinning,
+// and always leaves manual entry usable regardless of outcome.
+async function runAiEstimate({ btnEl, nameEl, calEl, key }) {
+  const name = nameEl.value.trim();
+  if (!name) {
+    nameEl.classList.add('input-error'); nameEl.focus();
+    setTimeout(() => nameEl.classList.remove('input-error'), 1500);
+    return;
+  }
+  delete pendingMacros[key];
+  btnEl.disabled = true;
+  btnEl.classList.add('ai-btn-loading');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_ESTIMATE_TIMEOUT_MS);
+  try {
+    const res = await fetch(AI_ESTIMATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+      signal: controller.signal,
+    });
+    const data = await res.json();
+    if (!res.ok || typeof data.calories !== 'number') throw new Error(data.error || 'ai_error');
+    calEl.value = Math.round(data.calories);
+    pendingMacros[key] = { protein_g: data.protein_g, carbs_g: data.carbs_g, fat_g: data.fat_g };
+  } catch (e) {
+    btnEl.classList.add('ai-btn-error');
+    setTimeout(() => btnEl.classList.remove('ai-btn-error'), 1500);
+  } finally {
+    clearTimeout(timer);
+    btnEl.disabled = false;
+    btnEl.classList.remove('ai-btn-loading');
+  }
+}
+
+function estimateCaloriesAI(ctx, dateStr, meal) {
+  const nameEl = document.getElementById(`name-${ctx}-${dateStr}-${meal}`);
+  const calEl  = document.getElementById(`cal-${ctx}-${dateStr}-${meal}`);
+  const btnEl  = document.getElementById(`ai-${ctx}-${dateStr}-${meal}`);
+  runAiEstimate({ btnEl, nameEl, calEl, key: macroKey(ctx, dateStr, meal) });
+}
+
+function estimateEditCaloriesAI(ctx, dateStr, meal, idx) {
+  const nameEl = document.getElementById(`editname-${ctx}-${dateStr}-${meal}-${idx}`);
+  const calEl  = document.getElementById(`editcal-${ctx}-${dateStr}-${meal}-${idx}`);
+  const btnEl  = document.getElementById(`editai-${ctx}-${dateStr}-${meal}-${idx}`);
+  runAiEstimate({ btnEl, nameEl, calEl, key: macroKey(ctx, dateStr, meal, idx) });
+}
 
 function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
   const mealTotal = items.reduce((s, it) => s + it.cal, 0);
@@ -494,9 +601,13 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
         const unitCal = item.unitCal != null ? item.unitCal : item.cal;
         html += `<div class="food-row food-row-editing">
             <input type="text" class="food-name-input" id="editname-${ctx}-${dateStr}-${mealKey}-${idx}"
-                   maxlength="60" value="${escHtml(item.name)}">
+                   maxlength="60" value="${escHtml(item.name)}"
+                   oninput="clearPendingMacros('${ctx}','${dateStr}','${mealKey}',${idx})">
             <input type="number" class="food-cal-input" id="editcal-${ctx}-${dateStr}-${mealKey}-${idx}"
                    placeholder="קל' ליח'" min="0" max="9999" step="1" value="${unitCal}">
+            <button type="button" class="food-add-btn ai-btn" title="הערכת קלוריות ומאקרו ע&quot;י AI"
+                    id="editai-${ctx}-${dateStr}-${mealKey}-${idx}"
+                    onclick="estimateEditCaloriesAI('${ctx}','${dateStr}','${mealKey}',${idx})">✨ AI</button>
             <div class="qty-stepper" title="כמות">
               <button type="button" class="qty-btn" onclick="stepEditQty('${ctx}','${dateStr}','${mealKey}',${idx},-1)">−</button>
               <input type="number" class="qty-value" id="editqty-${ctx}-${dateStr}-${mealKey}-${idx}"
@@ -525,11 +636,14 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
         <div class="food-add-row">
           <input type="text" class="food-name-input" id="name-${ctx}-${dateStr}-${mealKey}"
                  placeholder="שם המאכל" maxlength="60"
-                 oninput="foodNameInput(this)" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
+                 oninput="foodNameInput(this);clearPendingMacros('${ctx}','${dateStr}','${mealKey}')" onfocus="foodNameInput(this)" onblur="setTimeout(hideAutocomplete,150)"
                  onkeydown="foodNameKeydown(this,event);if(event.key==='Enter'&&!event.defaultPrevented)document.getElementById('cal-${ctx}-${dateStr}-${mealKey}').focus()">
           <input type="number" class="food-cal-input" id="cal-${ctx}-${dateStr}-${mealKey}"
                  placeholder="קל' ליח'" min="0" max="9999" step="1"
                  onkeydown="if(event.key==='Enter')document.getElementById('qty-${ctx}-${dateStr}-${mealKey}').focus()">
+          <button type="button" class="food-add-btn ai-btn" title="הערכת קלוריות ומאקרו ע&quot;י AI"
+                  id="ai-${ctx}-${dateStr}-${mealKey}"
+                  onclick="estimateCaloriesAI('${ctx}','${dateStr}','${mealKey}')">✨ AI</button>
           <div class="qty-stepper" title="כמות">
             <button type="button" class="qty-btn" onclick="stepQty('${ctx}','${dateStr}','${mealKey}',-1)">−</button>
             <input type="number" class="qty-value" id="qty-${ctx}-${dateStr}-${mealKey}"
@@ -557,6 +671,8 @@ function renderDayBodyHtml(ctx, dateStr, data) {
     ? (isOver ? "✅ יעד הושג!" : "חסרים קל'")
     : (isOver ? "חריגה בקל'" : "נותרו קל'");
   const overCls = (GOAL_MODE === 'cut' && isOver) ? ' over-goal' : '';
+  const macros  = getDayMacros(dayData);
+  const hasMacros = macros.protein > 0 || macros.carbs > 0 || macros.fat > 0;
 
   let html = `
     <div class="totals-bar">
@@ -576,6 +692,15 @@ function renderDayBodyHtml(ctx, dateStr, data) {
     <div class="cal-progress-wrap">
       <div class="cal-progress-bar" style="width:${pct}%;background:${barColor}"></div>
     </div>`;
+
+  if (hasMacros) {
+    html += `
+    <div class="macro-bar" title="מבוסס על פריטים שנוספו באמצעות הערכת AI בלבד">
+      <div class="macro-item"><span class="macro-val">${Math.round(macros.protein)}ג'</span><span class="macro-lbl">חלבון</span></div>
+      <div class="macro-item"><span class="macro-val">${Math.round(macros.carbs)}ג'</span><span class="macro-lbl">פחמימות</span></div>
+      <div class="macro-item"><span class="macro-val">${Math.round(macros.fat)}ג'</span><span class="macro-lbl">שומן</span></div>
+    </div>`;
+  }
 
   MEAL_KEYS.forEach(mealKey => {
     html += renderMealSectionHtml(ctx, dateStr, mealKey, dayData[mealKey] || []);

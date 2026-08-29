@@ -71,8 +71,12 @@ open menu.html
 ## 📁 מבנה הפרויקט
 
 ```
-├── menu.html       # האפליקציה המלאה (HTML + JS)
-└── style.css       # עיצוב
+├── menu.html            # האפליקציה המלאה (HTML + JS)
+├── style.css            # עיצוב
+├── sw.js                # Service Worker (cache אופליין)
+└── worker/              # Cloudflare Worker אופציונלי להערכת AI
+    ├── estimate.js
+    └── wrangler.toml
 ```
 
 ## 📊 מבנה הנתונים ב-LocalStorage
@@ -84,6 +88,28 @@ open menu.html
 | `activityTrackerV1` | פעילויות גופניות |
 | `foodHistoryV1` | היסטוריית מאכלים לאוטוקומפליט |
 | `settingsV1` | הגדרות משתמש |
+
+## ✨ הערכת קלוריות ומאקרו ע"י AI (אופציונלי)
+
+לחצן ה-✨AI ליד הוספת מאכל שולח את שם המאכל לפונקציית שרת קטנה (Cloudflare Worker) שמחזירה הערכת קלוריות + חלבון/פחמימות/שומן מ-Gemini. זו התוספת היחידה באפליקציה שדורשת רשת ושרת — הכל שאר האפליקציה ממשיכה לעבוד אופליין בלי זה, וגם הוספת מאכלים ידנית תמיד עובדת.
+
+### הקמה חד-פעמית
+
+1. **מפתח Gemini (חינם, בלי כרטיס אשראי)**: כנסו ל-https://aistudio.google.com/apikey, התחברו עם חשבון Google, ולחצו "Create API key".
+2. **חשבון Cloudflare (חינם)**: הירשמו ב-https://dash.cloudflare.com/sign-up אם אין לכם עדיין.
+3. **פריסת ה-Worker**:
+   ```bash
+   cd worker
+   npx wrangler login
+   npx wrangler kv namespace create RATE_LIMIT
+   # העתיקו את ה-id שמוחזר לתוך wrangler.toml (kv_namespaces.id)
+   npx wrangler secret put GEMINI_API_KEY
+   # הדביקו את מפתח ה-Gemini כשמתבקשים
+   npx wrangler deploy
+   ```
+4. פקודת ה-deploy תדפיס URL כמו `https://caltrack-estimate.<subdomain>.workers.dev` — הדביקו אותו כערך `AI_ESTIMATE_URL` ב-`menu.html` (ליד `FOOD_KEY`), ואם משנים דומיין ל-GitHub Pages שאינו `https://ilanlashinker.github.io`, עדכנו גם את `ALLOWED_ORIGIN` ב-`worker/wrangler.toml`.
+
+השכבה כוללת timeout (כדי שהכפתור לא יישאר תקוע) והגבלת קצב בסיסית לפי IP (20 בקשות בשעה) כך שאם ה-URL של ה-Worker ידלוף, לא ניתן יהיה לנצל אותו בלי הגבלה.
 
 ## ⚠️ הגבלות ידועות
 
