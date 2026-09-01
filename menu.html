@@ -323,7 +323,7 @@ const MEAL_LABELS = {
 // feature (see worker/estimate.js + README.md). Leave the placeholder if
 // the worker isn't deployed — the AI button will simply fail gracefully.
 const AI_ESTIMATE_URL = 'https://caltrack-estimate.ilan-caltrack.workers.dev';
-const AI_ESTIMATE_TIMEOUT_MS = 25000;
+const AI_ESTIMATE_TIMEOUT_MS = 32000; // two-step pipeline (translate + estimate, with a possible retry) server-side worst case is ~28s
 
 // AI-estimated macros (grams per unit) staged per food-row after a
 // successful estimate, keyed by row, and consumed the moment that row is
@@ -539,6 +539,8 @@ let editingEntry = null; // { ctx, dateStr, meal, idx }
 // (client-side timeout + try/finally) so it can never stay stuck spinning,
 // and always leaves manual entry usable regardless of outcome.
 const AI_FAILURE_MSG = 'לפעמים ה-AI לא מגיב עקב עומס/תקלה זמנית אצל הספק, נסו שוב בעוד כמה רגעים או הזינו ידנית.';
+const AI_QUOTA_MSG = 'המכסה היומית של הערכות AI נגמרה, הזן ידנית.';
+const AI_TRANSLATE_FAIL_MSG = 'תרגום התיאור נכשל. נסו לנסח את התיאור מחדש (למשל בפירוט רב יותר) או הזינו ידנית.';
 
 async function runAiEstimate({ btnEl, nameEl, calEl, msgEl, key }) {
   const name = nameEl.value.trim();
@@ -569,7 +571,9 @@ async function runAiEstimate({ btnEl, nameEl, calEl, msgEl, key }) {
     btnEl.classList.add('ai-btn-error');
     setTimeout(() => btnEl.classList.remove('ai-btn-error'), 1500);
     if (msgEl) {
-      msgEl.textContent = AI_FAILURE_MSG;
+      msgEl.textContent = e.message === 'quota_exceeded' ? AI_QUOTA_MSG
+        : e.message === 'translation_failed' ? AI_TRANSLATE_FAIL_MSG
+        : AI_FAILURE_MSG;
       msgEl.style.display = 'block';
       setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
     }
