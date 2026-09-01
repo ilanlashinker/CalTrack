@@ -323,7 +323,7 @@ const MEAL_LABELS = {
 // feature (see worker/estimate.js + README.md). Leave the placeholder if
 // the worker isn't deployed — the AI button will simply fail gracefully.
 const AI_ESTIMATE_URL = 'https://caltrack-estimate.ilan-caltrack.workers.dev';
-const AI_ESTIMATE_TIMEOUT_MS = 15000;
+const AI_ESTIMATE_TIMEOUT_MS = 25000;
 
 // AI-estimated macros (grams per unit) staged per food-row after a
 // successful estimate, keyed by row, and consumed the moment that row is
@@ -538,7 +538,9 @@ let editingEntry = null; // { ctx, dateStr, meal, idx }
 // and edit-row buttons; always resolves the button back to its normal state
 // (client-side timeout + try/finally) so it can never stay stuck spinning,
 // and always leaves manual entry usable regardless of outcome.
-async function runAiEstimate({ btnEl, nameEl, calEl, key }) {
+const AI_FAILURE_MSG = 'לפעמים ה-AI לא מגיב עקב עומס/תקלה זמנית אצל הספק, נסו שוב בעוד כמה רגעים או הזינו ידנית.';
+
+async function runAiEstimate({ btnEl, nameEl, calEl, msgEl, key }) {
   const name = nameEl.value.trim();
   if (!name) {
     nameEl.classList.add('input-error'); nameEl.focus();
@@ -546,6 +548,7 @@ async function runAiEstimate({ btnEl, nameEl, calEl, key }) {
     return;
   }
   delete pendingMacros[key];
+  if (msgEl) msgEl.style.display = 'none';
   btnEl.disabled = true;
   btnEl.classList.add('ai-btn-loading');
 
@@ -565,6 +568,11 @@ async function runAiEstimate({ btnEl, nameEl, calEl, key }) {
   } catch (e) {
     btnEl.classList.add('ai-btn-error');
     setTimeout(() => btnEl.classList.remove('ai-btn-error'), 1500);
+    if (msgEl) {
+      msgEl.textContent = AI_FAILURE_MSG;
+      msgEl.style.display = 'block';
+      setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
+    }
   } finally {
     clearTimeout(timer);
     btnEl.disabled = false;
@@ -576,14 +584,16 @@ function estimateCaloriesAI(ctx, dateStr, meal) {
   const nameEl = document.getElementById(`name-${ctx}-${dateStr}-${meal}`);
   const calEl  = document.getElementById(`cal-${ctx}-${dateStr}-${meal}`);
   const btnEl  = document.getElementById(`ai-${ctx}-${dateStr}-${meal}`);
-  runAiEstimate({ btnEl, nameEl, calEl, key: macroKey(ctx, dateStr, meal) });
+  const msgEl  = document.getElementById(`ai-err-${ctx}-${dateStr}-${meal}`);
+  runAiEstimate({ btnEl, nameEl, calEl, msgEl, key: macroKey(ctx, dateStr, meal) });
 }
 
 function estimateEditCaloriesAI(ctx, dateStr, meal, idx) {
   const nameEl = document.getElementById(`editname-${ctx}-${dateStr}-${meal}-${idx}`);
   const calEl  = document.getElementById(`editcal-${ctx}-${dateStr}-${meal}-${idx}`);
   const btnEl  = document.getElementById(`editai-${ctx}-${dateStr}-${meal}-${idx}`);
-  runAiEstimate({ btnEl, nameEl, calEl, key: macroKey(ctx, dateStr, meal, idx) });
+  const msgEl  = document.getElementById(`ai-err-edit-${ctx}-${dateStr}-${meal}-${idx}`);
+  runAiEstimate({ btnEl, nameEl, calEl, msgEl, key: macroKey(ctx, dateStr, meal, idx) });
 }
 
 function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
@@ -616,6 +626,7 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
             </div>
             <button class="food-add-btn" onclick="saveEditFoodItem('${ctx}','${dateStr}','${mealKey}',${idx})">שמור</button>
             <button class="food-del-btn" onclick="cancelEditFoodItem()" title="ביטול">✕</button>
+            <div class="ai-error-msg" id="ai-err-edit-${ctx}-${dateStr}-${mealKey}-${idx}"></div>
           </div>`;
       } else {
         const qty   = item.qty || 1;
@@ -652,6 +663,7 @@ function renderMealSectionHtml(ctx, dateStr, mealKey, items) {
             <button type="button" class="qty-btn" onclick="stepQty('${ctx}','${dateStr}','${mealKey}',1)">+</button>
           </div>
           <button class="food-add-btn" onclick="addFoodItem('${ctx}','${dateStr}','${mealKey}')">הוסף</button>
+          <div class="ai-error-msg" id="ai-err-${ctx}-${dateStr}-${mealKey}"></div>
         </div>
       </div>
     </div>`;

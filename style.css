@@ -1088,6 +1088,19 @@ body {
   50%      { opacity: 0.5; }
 }
 
+.ai-error-msg {
+  display: none;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--amber-dark);
+  background: rgba(239,159,39,0.08);
+  border: 1px solid rgba(239,159,39,0.25);
+  border-radius: var(--radius-md);
+  line-height: 1.5;
+}
+
 .qty-stepper {
   display: flex;
   align-items: center;

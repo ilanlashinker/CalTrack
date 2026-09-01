@@ -3,8 +3,8 @@
 // deploy` after setting the ALLOWED_ORIGIN var, the GEMINI_API_KEY secret,
 // and binding a KV namespace as RATE_LIMIT (see README.md for exact steps).
 
-const GEMINI_MODEL = 'gemini-3.6-flash';
-const GEMINI_TIMEOUT_MS = 10000;
+const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+const GEMINI_TIMEOUT_MS = 20000;
 const RATE_LIMIT_PER_HOUR = 20;
 const MAX_NAME_LEN = 80;
 
@@ -57,7 +57,7 @@ async function checkRateLimit(env, ip) {
   }
 }
 
-async function callGemini(env, name) {
+async function callGeminiOnce(env, name) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
   const prompt = `Estimate realistic average nutrition values for ONE typical serving/unit of this food, as commonly consumed. Food name (may be in Hebrew or English): "${name}". Return calories (kcal), and grams of protein, carbs, and fat for that single unit.`;
 
@@ -74,6 +74,13 @@ async function callGemini(env, name) {
         generationConfig: {
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
+          // gemini-3.6-flash is a thinking model with a variable thinking
+          // token count by default ('medium'), which is what caused the
+          // wild latency swings (0.9s-32s) we measured. 'low' cuts that
+          // down without going as far as 'minimal', where we saw degenerate
+          // all-zero output more often. The retry-on-zero guard below is
+          // the actual correctness safety net regardless of this setting.
+          thinkingConfig: { thinkingLevel: 'low' },
         },
       }),
       signal: controller.signal,
@@ -111,6 +118,21 @@ async function callGemini(env, name) {
   }
 
   return { calories, protein_g, carbs_g, fat_g };
+}
+
+function isAllZero(r) {
+  return r.calories === 0 && r.protein_g === 0 && r.carbs_g === 0 && r.fat_g === 0;
+}
+
+// A "successful" (HTTP 200) all-zero response is a masked failure, not a
+// real answer — no real food is exactly 0 kcal/0g everything. Retry once;
+// accept whatever the second attempt returns (even if also zero, e.g. a
+// legitimately ~0-kcal item like plain water) rather than looping forever.
+async function callGemini(env, name) {
+  const first = await callGeminiOnce(env, name);
+  if (!isAllZero(first)) return first;
+  console.error('Gemini returned all-zero values, retrying once');
+  return callGeminiOnce(env, name);
 }
 
 export default {
