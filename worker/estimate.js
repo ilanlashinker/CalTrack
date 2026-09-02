@@ -41,6 +41,43 @@ const RESPONSE_SCHEMA = {
 
 const NUTRITION_SYSTEM_PROMPT = `You are a nutrition estimation assistant. Given a food description, estimate its nutrition. Work it out step by step in this order: 1) weight_g: typical serving weight in grams (use the weight stated in the description if given, otherwise a realistic typical portion for this specific food). 2) calories_per_100g: realistic calories per 100 grams for this specific food, must vary meaningfully between different foods, not a generic average. 3) calories: weight_g / 100 * calories_per_100g. 4) protein_g, carbs_g, fat_g: grams for the total weight_g, reflecting this specific foods real macronutrient profile - lean meats and eggs are protein-dominant with close to 0g carbs, grains and fruit are carb-dominant, oils/fats are almost entirely fat. Do not use similar ratios across different food types. Be precise and specific to this exact food, not a generic estimate.`;
 
+// Curated nutrition facts for well-known Israeli brand-name/local products,
+// checked before the AI pipeline runs at all. These are names an AI has no
+// real way to know precisely (they're not generic foods, they're specific
+// products) — testing found the AI's Bamba estimate was measurably wrong
+// (internally inconsistent macro ratios) even though it nails standard
+// foods like chicken or rice. A direct lookup is faster, free, and exact.
+// This is meant to stay small and grow organically: add an entry whenever
+// the AI clearly gets a specific branded/local product wrong, not as an
+// attempt to cover Israeli food generally (that's a losing battle and
+// exactly the "structured database" approach the AI feature exists to
+// avoid needing). Values are per ONE typical serving/unit as commonly sold
+// (matching what the AI pipeline itself returns), not per 100g — the
+// front-end's own qty stepper multiplies from there, same as with the AI.
+const KNOWN_FOODS = [
+  { keywords: ['במבה'], calories: 134, protein_g: 3.3, carbs_g: 13.8, fat_g: 8.3 }, // שקית קטנה, ~25 גרם
+  { keywords: ['ביסלי'], calories: 184, protein_g: 3.4, carbs_g: 26, fat_g: 7 }, // שקית קטנה, ~40 גרם
+  { keywords: ['מילקי'], calories: 132, protein_g: 2.6, carbs_g: 15, fat_g: 6.8 }, // גביע בודד, ~75 גרם
+  { keywords: ['קרמבו'], calories: 115, protein_g: 1.2, carbs_g: 15, fat_g: 5.5 }, // יחידה בודדת, ~24 גרם
+  { keywords: ['שוקו'], calories: 130, protein_g: 6, carbs_g: 19, fat_g: 3.4 }, // קופסת שתייה קטנה, ~200 מ"ל
+  { keywords: ['דניאלה'], calories: 160, protein_g: 1.5, carbs_g: 17, fat_g: 9.5 }, // חטיף בודד, ~30 גרם
+  { keywords: ['עמק', 'גבינת עמק'], calories: 62, protein_g: 5, carbs_g: 0.3, fat_g: 5 }, // פרוסה בודדת, ~20 גרם
+  { keywords: ['תפוזינה'], calories: 155, protein_g: 0, carbs_g: 38, fat_g: 0 }, // פחית/בקבוק סטנדרטי, ~330 מ"ל
+  { keywords: ['פיצוחים'], calories: 175, protein_g: 6, carbs_g: 6, fat_g: 14 }, // חופן, ~30 גרם, ממוצע גס (תלוי בתערובת)
+];
+
+// Substring matching (not exact match) so "שקית במבה"/"במבה"/"חבילת במבה"
+// all resolve to the same entry — these are fixed brand-name strings, not
+// generic words, so substring collisions with unrelated foods are unlikely.
+function lookupKnownFood(name) {
+  for (const entry of KNOWN_FOODS) {
+    if (entry.keywords.some(kw => name.includes(kw))) {
+      return { calories: entry.calories, protein_g: entry.protein_g, carbs_g: entry.carbs_g, fat_g: entry.fat_g };
+    }
+  }
+  return null;
+}
+
 function corsHeaders(env) {
   return {
     'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN,
@@ -219,6 +256,11 @@ export default {
     const name = typeof body.name === 'string' ? body.name.trim().slice(0, MAX_NAME_LEN) : '';
     if (!name) {
       return jsonResponse({ error: 'missing_name' }, 400, env);
+    }
+
+    const known = lookupKnownFood(name);
+    if (known) {
+      return jsonResponse(known, 200, env);
     }
 
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
