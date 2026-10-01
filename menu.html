@@ -323,7 +323,7 @@ const MEAL_LABELS = {
 // feature (see worker/estimate.js + README.md). Leave the placeholder if
 // the worker isn't deployed — the AI button will simply fail gracefully.
 const AI_ESTIMATE_URL = 'https://caltrack-estimate.ilan-caltrack.workers.dev';
-const AI_ESTIMATE_TIMEOUT_MS = 45000; // gemini-3.6-flash's default thinking can take 30s+; stay above the worker's own 40s ceiling
+const AI_ESTIMATE_TIMEOUT_MS = 50000; // worst case: a fast transient-5xx first attempt + ~1.5s delay + a full-length retry (up to the worker's own 40s ceiling)
 
 // AI-estimated macros (grams per unit) staged per food-row after a
 // successful estimate, keyed by row, and consumed the moment that row is
@@ -540,6 +540,7 @@ let editingEntry = null; // { ctx, dateStr, meal, idx }
 // and always leaves manual entry usable regardless of outcome.
 const AI_FAILURE_MSG = 'לפעמים ה-AI לא מגיב עקב עומס/תקלה זמנית אצל הספק, נסו שוב בעוד כמה רגעים או הזינו ידנית.';
 const AI_QUOTA_MSG = 'המכסה היומית של הערכות AI נגמרה, הזן ידנית.';
+const AI_BUSY_MSG = 'השירות עמוס כרגע, נסה שוב בעוד רגע.';
 
 async function runAiEstimate({ btnEl, nameEl, calEl, msgEl, key }) {
   const name = nameEl.value.trim();
@@ -570,7 +571,9 @@ async function runAiEstimate({ btnEl, nameEl, calEl, msgEl, key }) {
     btnEl.classList.add('ai-btn-error');
     setTimeout(() => btnEl.classList.remove('ai-btn-error'), 1500);
     if (msgEl) {
-      msgEl.textContent = e.message === 'quota_exceeded' ? AI_QUOTA_MSG : AI_FAILURE_MSG;
+      msgEl.textContent = e.message === 'quota_exceeded' ? AI_QUOTA_MSG
+        : e.message === 'transient_unavailable' ? AI_BUSY_MSG
+        : AI_FAILURE_MSG;
       msgEl.style.display = 'block';
       setTimeout(() => { msgEl.style.display = 'none'; }, 5000);
     }

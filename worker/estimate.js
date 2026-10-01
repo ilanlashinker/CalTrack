@@ -148,8 +148,12 @@ Be precise and specific to this exact food, not a generic estimate.`;
     // Gemini's free tier has a per-model daily request quota; a 429 here
     // means that's exhausted, not a transient blip like a timeout. Surface
     // it distinctly so the client can tell the user rather than showing a
-    // generic "try again" message.
-    throw { code: res.status === 429 ? 'quota_exceeded' : 'ai_error' };
+    // generic "try again" message. A 5xx (e.g. 503 "currently experiencing
+    // high demand") is a different thing entirely — a brief overload on
+    // Gemini's own infrastructure, not a quota or a real error - that one
+    // is worth a single quick retry (handled in callGemini below).
+    const code = res.status === 429 ? 'quota_exceeded' : res.status >= 500 ? 'transient_unavailable' : 'ai_error';
+    throw { code };
   }
 
   const data = await res.json();
@@ -178,12 +182,38 @@ function isAllZero(r) {
   return r.calories === 0 && r.protein_g === 0 && r.carbs_g === 0 && r.fat_g === 0;
 }
 
-// A "successful" (HTTP 200) all-zero response is a masked failure, not a
-// real answer — no real food is exactly 0 kcal/0g everything. Retry once;
-// accept whatever the second attempt returns (even if also zero, e.g. a
-// legitimately ~0-kcal item like plain water) rather than looping forever.
+const TRANSIENT_RETRY_DELAY_MS = 1500;
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Retries exactly once, in either of two distinct situations - never both,
+// never more than once total:
+// 1. A "successful" (HTTP 200) all-zero response - a masked failure, not a
+//    real answer (no real food is exactly 0 kcal/0g everything). Retried
+//    immediately; accepts whatever the second attempt returns (even if
+//    also zero, e.g. a legitimately ~0-kcal item like plain water).
+// 2. A transient 5xx from Gemini itself (503 "currently experiencing high
+//    demand" is the one actually seen in practice; 502/504 are covered the
+//    same way in case they occur). Retried after a short delay so it
+//    doesn't immediately land on the same overload. 429 (quota_exceeded)
+//    is deliberately NOT retried here - retrying can't help when the daily
+//    quota is genuinely exhausted, and we don't want to burn a second
+//    request against that same 20/day budget for no benefit.
+// Either way, if the retry also fails, that error (or zero result) is
+// simply returned/thrown as-is - no further attempts.
 async function callGemini(env, name) {
-  const first = await callGeminiOnce(env, name);
+  let first;
+  try {
+    first = await callGeminiOnce(env, name);
+  } catch (e) {
+    if (e && e.code === 'transient_unavailable') {
+      console.error('Gemini transiently unavailable (5xx), retrying once after a short delay');
+      await sleep(TRANSIENT_RETRY_DELAY_MS);
+      return callGeminiOnce(env, name);
+    }
+    throw e;
+  }
   if (!isAllZero(first)) return first;
   console.error('Gemini returned all-zero values, retrying once');
   return callGeminiOnce(env, name);
@@ -227,7 +257,10 @@ export default {
     } catch (e) {
       console.error(e);
       const code = e && e.code ? e.code : 'ai_error';
-      const status = code === 'timeout' ? 504 : code === 'quota_exceeded' ? 429 : 502;
+      const status = code === 'timeout' ? 504
+        : code === 'quota_exceeded' ? 429
+        : code === 'transient_unavailable' ? 503
+        : 502;
       return jsonResponse({ error: code }, status, env);
     }
   },
